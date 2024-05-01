@@ -1,0 +1,13 @@
+#Data files
+data
+checkpoints
+vgg16_finetune
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
