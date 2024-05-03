@@ -1,1 +1,6 @@
 pylint
+jupyter
+ipython
+ipykernel
+# Can use the command python -m ipykernel install --user --name=cs231-project --display-name="cs231-project" to 
+# setup a new kernel
