@@ -8,6 +8,7 @@ pyyaml
 regex
 requests
 torchvision
+python-dotenv
 
 --find-links https://download.pytorch.org/whl/torch_stable.html
 torch

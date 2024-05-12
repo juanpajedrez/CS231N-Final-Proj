@@ -2,6 +2,8 @@
 data
 checkpoints
 vgg16_finetune
+resnet18_finetune
+densenet121_finetune
 
 # Environments
 .env
