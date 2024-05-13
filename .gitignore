@@ -15,9 +15,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Mac
+.DS_Store
+
 #All python cache related stuff
 __pychache__
 *.pyc
-
-# Mac
-.DS_Store
