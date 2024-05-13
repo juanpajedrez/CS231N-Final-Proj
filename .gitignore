@@ -1,5 +1,6 @@
 #Data files
 data
+models
 checkpoints
 vgg16_finetune
 resnet18_finetune
