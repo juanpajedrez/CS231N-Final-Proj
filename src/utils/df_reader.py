@@ -26,11 +26,43 @@ class DfReader:
         Instance method that would set the folder path where
         the desired dataframes are going to be read
         Parameters:
-            folder_path(str): String path that would access de data
+            folder_path(str): String path that would access the data
         """
         # Define the folder_path
         self.folder_path = folder_path
-        pass
+
+    def get_columns(self):
+        """
+        In MICCAI 2023 data, we have 20 diseases. We will only be using 14 diseases for our project.
+        The top 14 entries are:
+        No Finding                    59406
+        Infiltration                  19894
+        Effusion                      13317
+        Atelectasis                   11559
+        Nodule                         6331
+        Mass                           5782
+        Pneumothorax                   5302
+        Consolidation                  4667
+        Pleural Thickening             3385
+        Cardiomegaly                   2776
+        Emphysema                      2516
+        Edema                          2303
+        Subcutaneous Emphysema         1991
+        Fibrosis                       1686
+        Pneumonia                      1431
+        Tortuous Aorta                  742
+        Calcification of the Aorta      455
+        Pneumoperitoneum                316
+        Pneumomediastinum               253
+        Hernia                          227
+        """
+        # Top 14 statistically significant diseases
+        diseases = ['Infiltration', 'Effusion', 'Atelectasis', 'Nodule',
+                    'Mass', 'Pneumothorax', 'Consolidation', 'Pleural Thickening',
+                    'Cardiomegaly', 'Emphysema', 'Edema', 'Subcutaneous Emphysema', 
+                    'Fibrosis', 'Pneumonia', 'No Finding']
+        
+        return ['id'] + diseases + ['subj_id']
 
     def get_dfs(self):
         """
@@ -50,6 +82,11 @@ class DfReader:
                 pseudo_path = os.path.join(self.folder_path, filename)
                 df_read:pd.DataFrame = pd.read_csv(pseudo_path)
                 print(f"The file: {filename} has been retrieved")
+
+                # get the relevant columns
+                df_read = df_read[self.get_columns()]
+
+                # append the dataframe to the list
                 dfs_holder.append(df_read)
                 dfs_names.append(filename)
         

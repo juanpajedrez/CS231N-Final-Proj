@@ -21,3 +21,6 @@ venv.bak/
 #All python cache related stuff
 __pychache__
 *.pyc
+
+# Wandb
+notebooks/wandb/
