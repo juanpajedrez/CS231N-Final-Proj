@@ -56,11 +56,11 @@ class DfReader:
         Pneumomediastinum               253
         Hernia                          227
         """
-        # Top 14 statistically significant diseases
+        # Top 14 statistically significant diseases, excluding "No Finding"
         diseases = ['Infiltration', 'Effusion', 'Atelectasis', 'Nodule',
                     'Mass', 'Pneumothorax', 'Consolidation', 'Pleural Thickening',
                     'Cardiomegaly', 'Emphysema', 'Edema', 'Subcutaneous Emphysema', 
-                    'Fibrosis', 'Pneumonia', 'No Finding']
+                    'Fibrosis', 'Pneumonia']
         
         return ['id'] + diseases + ['subj_id']
 
