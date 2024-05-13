@@ -1,7 +1,10 @@
 #Data files
 data
+models
 checkpoints
 vgg16_finetune
+resnet18_finetune
+densenet121_finetune
 
 # Environments
 .env
@@ -14,4 +17,7 @@ venv.bak/
 
 # Mac
 .DS_Store
+
+#All python cache related stuff
+__pychache__
 *.pyc

@@ -2,12 +2,13 @@ numpy
 scikit-learn 
 matplotlib 
 pandas
-torchinfo 
 tqdm
 pyyaml
 regex
 requests
-torchvision
+python-dotenv
 
---find-links https://download.pytorch.org/whl/torch_stable.html
-torch
+#--find-links https://download.pytorch.org/whl/torch_stable.html
+#torch
+#torchinfo 
+#torchvision
