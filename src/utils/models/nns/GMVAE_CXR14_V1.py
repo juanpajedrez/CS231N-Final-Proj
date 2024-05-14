@@ -59,6 +59,7 @@ class Encoder(torch.nn.Module):
         self.max_pool = nn.MaxPool2d(kernel_size=7)
 
         #Obtain the net
+        # z space to sample from
         self.net = nn.Sequential(
             nn.Linear(300, 2 * z_dim),
         )

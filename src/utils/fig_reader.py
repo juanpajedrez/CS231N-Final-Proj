@@ -37,14 +37,13 @@ class CXReader(Dataset):
         self.data_path = data_path 
         self.dataframe = dataframe
         self.transform = transform 
-        self.device = device
 
     def __len__(self):
         """
         Instance method of the abstract class Dataset from torch,
         should return the length of all data entries in question.
         """
-        return len(self.dataframe)
+        return self.dataframe.shape[0]
     
     def __getitem__(self, idx):
         """
@@ -52,18 +51,16 @@ class CXReader(Dataset):
         should retrun the desired image to select from.
         """
         
-        #Based on the idx, select the desired name
-        img_name = self.dataframe["id"][idx]
+        # Based on the idx, select the desired row
+        row = self.dataframe.iloc[idx]
+
+        img_name = row['id']
 
         #Obtain the values for the binarized labels
         #REMEMBER: Daframe first column are images names
         #and last column is the associated patient id, so drop these.
-        label = self.dataframe.iloc[idx, 1:-1].values
-        label = label.astype(np.int16)
+        label = row[1:-1].values.astype(np.float16)
         label = torch.from_numpy(label)
-
-        #Send to device
-        label.to(self.device)
 
         #Create an image path wth the datapath
         img_path = os.path.join(self.data_path, img_name)
@@ -75,8 +72,6 @@ class CXReader(Dataset):
         if self.transform:
             image = self.transform(image)
         
-        #Send to device
-        image.to(self.device)
         return image, label
         
     
