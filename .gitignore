@@ -15,6 +15,9 @@ ENV/
 env.bak/
 venv.bak/
 
+#ignore
+wandb
+
 # Mac
 .DS_Store
 
