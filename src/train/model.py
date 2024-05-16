@@ -11,11 +11,10 @@ sys.path.append(os.path.join(project_path, "src"))
 from train import helpers
 from torch.utils.tensorboard import SummaryWriter
 
+summary_writer = None
 
 OBJECTIVE = "overfit"
-ARCHITECTURE = helpers.Architectures.RESNET
-
-summary_writer = SummaryWriter(f'runs/{ARCHITECTURE}_adam_10epochs')
+ARCHITECTURE = helpers.Architectures.DENSENET
 
 if OBJECTIVE == "overfit":
     data_augmentation = True
@@ -127,4 +126,6 @@ def train(architecture, optimiser, num_epochs=10):
         val_accuracy(model, val_loader, epoch)
 
 if __name__ == "__main__":
-    train(architecture=ARCHITECTURE, optimiser=helpers.Optimisers.ADAM, num_epochs=10)
+    for architecture in (helpers.Architectures.DENSENET, helpers.Architectures.VGG, helpers.Architectures.RESNET):
+        summary_writer = SummaryWriter(f'runs/{ARCHITECTURE}_adam_10epochs_elu')
+        train(architecture=architecture, optimiser=helpers.Optimisers.ADAM, num_epochs=10)

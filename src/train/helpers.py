@@ -107,7 +107,7 @@ def custom_classifier(in_features, num_classes):
     # 3. activation functions
     return torch.nn.Sequential(
         torch.nn.Linear(in_features, 4096, bias=True),
-        torch.nn.ReLU(),
+        torch.nn.ELU(),
         torch.nn.Linear(4096, num_classes, bias=True),
     )
 
