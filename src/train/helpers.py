@@ -1,5 +1,7 @@
 import os
+import random
 
+import numpy as np
 import torch
 from sklearn.metrics import roc_auc_score
 from torch.utils.data import DataLoader, RandomSampler
@@ -174,9 +176,9 @@ def vgg_16(num_classes):
     for param in vgg16.parameters():
         param.requires_grad = False
 
-    in_features = vgg16.classifier[6].in_features
+    in_features = vgg16.classifier[0].in_features
 
-    vgg16.classifier[6] = custom_classifier(in_features, num_classes)
+    vgg16.classifier = custom_classifier(in_features, num_classes)
 
     return vgg16
 
@@ -195,3 +197,14 @@ def pprint(*args):
     print(" ".join(map(str, args)))
     with open('logs/log.txt', 'a') as f:
         print(" ".join(map(str, args)), file=f, flush=True)
+
+
+# Fix the random seed.
+def seed_everything(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True

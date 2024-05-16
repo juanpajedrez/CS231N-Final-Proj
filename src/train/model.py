@@ -111,13 +111,12 @@ def train(architecture, optimiser, num_epochs=10):
             ground_truth = torch.cat((ground_truth, labels.cpu()), 0)
             predictions = torch.cat((predictions, probabilities.detach().cpu()), 0)
 
-            summary_writer.add_scalar('training_loss', loss.item(), epoch * len(train_loader) + t)
-
             if t % 10 == 0:
                 try:
                     auc_score = helpers.compute_auc(ground_truth, predictions)
                     helpers.pprint('Iteration:', t, 'Loss:', loss.item(), 'score:', auc_score)
                     summary_writer.add_scalar('training_auc_score', auc_score, epoch * len(train_loader) + t)
+                    summary_writer.add_scalar('training_loss', loss.item(), epoch * len(train_loader) + t)
                 except ValueError:
                     # If the auc score is not computable, pass
                     helpers.pprint('Iteration:', t, 'Loss:', loss.item(), 'score:', 'Not computable')
