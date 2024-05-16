@@ -20,7 +20,7 @@ class DfReader:
     2.) Datarframe labels test
     3.) Dataframe labels val
     """
-    def __init__(self, diseases='all'):
+    def __init__(self, diseases='all', data='all'):
         # code for backward compatibility
         if diseases == 'all':
             self.diseases = [
@@ -31,6 +31,11 @@ class DfReader:
                 ]
         else:
             self.diseases = diseases
+        
+        # we can use small dataset to overfit various architectures to understand
+        # the representational capabilities of the networks
+        assert(data in ('all', 'small'))
+        self.data = data
 
     def set_folder_path(self, folder_path:str):
         """
@@ -67,9 +72,33 @@ class DfReader:
                 # get the relevant columns
                 df_read = df_read[self.get_columns()]
 
+                # filter out by how much data is needed
+                df_read = self.filter_data(df_read)
+
                 # append the dataframe to the list
                 dfs_holder.append(df_read)
                 dfs_names.append(filename)
         
         #Return the list with the dataframes
         return dfs_holder, dfs_names
+    
+    def filter_data(self, df):
+        if self.data == 'all':
+            return df
+        
+        small_data_size = 1400
+        
+        # in case of small data, lets try to return some 1400 images. these
+        # images can be consumed in ~ 40 iterations without augmentation and 
+        # around 350 iterations with augmentation
+
+        # the incoming frame already has the relevant diseases. lets try to
+        # get an even distribution of diseases in the small dataset
+        df_small = pd.DataFrame()
+        num_sample = small_data_size // len(self.diseases)
+        for disease in self.diseases:
+            df_disease = df[df[disease] == 1]
+            df_disease = df_disease.sample(n=num_sample, random_state=1)
+            df_small = pd.concat([df_small, df_disease])
+
+        return df_small
