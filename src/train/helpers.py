@@ -8,6 +8,14 @@ from torchvision import models, transforms
 from utils.df_reader import DfReader
 from utils.fig_reader import CXReader
 
+class Architectures:
+    VGG = 'vgg'
+    DENSENET = 'densenet'
+    RESNET = 'resnet'
+
+class Optimisers:
+    ADAM = 'adam'
+    SGD = 'sgd'
 
 # ToDo: Currently this file is specific to training for Infiltration, which is the
 # highest class after No Finding. The hope is to get state of art accuracy on this
@@ -22,26 +30,38 @@ def get_dataframes(df_path, diseases="all", data="all"):
 
 
 def get_data_loaders(
-    dfs_holder, dfs_names, data_path, batch_size, num_workers, transform
+    dfs_holder, dfs_names, data_path, batch_size, num_workers, data_augmentation
 ):
     # Create datasets and dataloaders
     train_dataset = CXReader(
         data_path=data_path,
         dataframe=dfs_holder[dfs_names.index("train.csv")],
-        transform=transform,
+        transform=get_transforms(data_augmentation),
     )
     test_dataset = CXReader(
-        data_path=data_path, dataframe=dfs_holder[dfs_names.index("test.csv")]
+        data_path=data_path, 
+        dataframe=dfs_holder[dfs_names.index("test.csv")],
+        transform=get_transforms(False)
     )
     val_dataset = CXReader(
-        data_path=data_path, dataframe=dfs_holder[dfs_names.index("val.csv")]
+        data_path=data_path, 
+        dataframe=dfs_holder[dfs_names.index("val.csv")],
+        transform=get_transforms(False)
     )
 
     # ToDo: In case of all classes, lets try to use weighted random sampler
-    sampler = RandomSampler(dataset=train_dataset, replacement=False)
+    sampler = RandomSampler(train_dataset, replacement=False)
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, num_workers=num_workers, sampler=sampler
     )
+
+    transform_test_val = transforms.Compose([
+        transforms.Resize((224, 224)),  # Resize to 256x256
+        # transforms.CenterCrop((224, 224)),  # Center crop to 224x224
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+
     test_loader = DataLoader(
         test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
     )
@@ -53,8 +73,8 @@ def get_data_loaders(
 
 
 def get_transforms(augmentaiton=False):
+    normalize = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     if augmentaiton:
-        normalize = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         transform = transforms.Compose(
             [
                 transforms.Resize(256),
@@ -72,11 +92,9 @@ def get_transforms(augmentaiton=False):
     else:
         transform = transforms.Compose(
             [
-                transforms.Resize((256, 256)),
+                transforms.Resize(256),
                 transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),
+                normalize
             ]
         )
     return transform
@@ -94,25 +112,33 @@ def custom_classifier(in_features, num_classes):
     )
 
 
-def get_optimiser(model, architecture, optimiser_name="adam"):
+def get_optimiser(model, architecture, optimiser="adam"):
     # experiment knobs
     # 1. optimiser
     # 2. learning rate
-    if architecture == "densenet":
+    if architecture == Architectures.DENSENET:
         parameters = model.classifier.parameters()
-    elif architecture == "resnet":
+    elif architecture == Architectures.RESNET:
         parameters = model.fc.parameters()
-    elif architecture == "vgg":
+    elif architecture == Architectures.VGG:
         parameters = model.classifier[6].parameters()
 
-    if optimiser_name == "adam":
+    if optimiser == Optimisers.ADAM:
         return torch.optim.Adam(parameters, lr=0.001)
-    elif optimiser_name == "sgd":
+    elif optimiser == Optimisers.SGD:
         return torch.optim.SGD(parameters, lr=0.001, momentum=0.9)
+
+def get_model(architecture, num_classes):
+    if architecture == Architectures.DENSENET:
+        return densenet_121(num_classes)
+    elif architecture == Architectures.RESNET:
+        return resnet_18(num_classes)
+    elif architecture == Architectures.VGG:
+        return vgg_16(num_classes)
 
 
 def densenet_121(num_classes):
-    densenet121 = models.models.densenet121(weights="DEFAULT")
+    densenet121 = models.densenet121(weights="DEFAULT")
 
     # freeze parameters
     for param in densenet121.parameters():
@@ -127,7 +153,7 @@ def densenet_121(num_classes):
 
 def resnet_18(num_classes):
     # get pretrained model
-    resnet18 = models.models.resnet18(pretrained=True)
+    resnet18 = models.resnet18(weights='DEFAULT')
 
     # freeze parameters
     for param in resnet18.parameters():
@@ -142,7 +168,7 @@ def resnet_18(num_classes):
 
 def vgg_16(num_classes):
     # get pretrained model
-    vgg16 = models.models.vgg16(pretrained=True)
+    vgg16 = models.vgg16(weights='DEFAULT')
 
     # freeze parameters
     for param in vgg16.parameters():
@@ -164,3 +190,8 @@ def compute_auc(labels, predictions):
     gt_np = labels.numpy()
     pred_np = predictions.numpy()
     return roc_auc_score(gt_np, pred_np, average="macro")
+
+def pprint(*args):
+    print(" ".join(map(str, args)))
+    with open('logs/log.txt', 'a') as f:
+        print(" ".join(map(str, args)), file=f, flush=True)

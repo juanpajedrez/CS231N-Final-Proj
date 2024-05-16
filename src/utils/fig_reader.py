@@ -22,7 +22,7 @@ class CXReader(Dataset):
     """
 
     def __init__(self, dataframe:pd.DataFrame, data_path: str,
-                device:str, transform:transforms.Compose = None):
+                device:str = None, transform:transforms.Compose = None):
         """
         Parameters:
             dataframe(pd.Dataframe): Contains all of the main information

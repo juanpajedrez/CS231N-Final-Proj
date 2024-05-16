@@ -24,3 +24,6 @@ __pychache__
 
 # Wandb
 notebooks/wandb/
+
+# tensorboard
+runs/
