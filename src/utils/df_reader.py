@@ -8,7 +8,6 @@ Current Authors: Juan Pablo Triana Martinez, Abhishek Kumar
 """
 
 #Import the necessry modules
-
 import pandas as pd
 import os
 from tqdm import tqdm
@@ -20,17 +19,30 @@ class DfReader:
     2.) Datarframe labels test
     3.) Dataframe labels val
     """
+    def __init__(self, diseases='all'):
+        # code for backward compatibility
+        if diseases == 'all':
+            self.diseases = [
+                    'Infiltration', 'Effusion', 'Atelectasis', 'Nodule',
+                    'Mass', 'Pneumothorax', 'Consolidation', 'Pleural Thickening',
+                    'Cardiomegaly', 'Emphysema', 'Edema', 'Subcutaneous Emphysema', 
+                    'Fibrosis', 'Pneumonia'
+                ]
+        else:
+            self.diseases = diseases
 
     def set_folder_path(self, folder_path:str):
         """
         Instance method that would set the folder path where
         the desired dataframes are going to be read
         Parameters:
-            folder_path(str): String path that would access de data
+            folder_path(str): String path that would access the data
         """
         # Define the folder_path
         self.folder_path = folder_path
-        pass
+
+    def get_columns(self):
+        return ['id'] + self.diseases + ['subj_id']
 
     def get_dfs(self):
         """
@@ -50,6 +62,11 @@ class DfReader:
                 pseudo_path = os.path.join(self.folder_path, filename)
                 df_read:pd.DataFrame = pd.read_csv(pseudo_path)
                 print(f"The file: {filename} has been retrieved")
+
+                # get the relevant columns
+                df_read = df_read[self.get_columns()]
+
+                # append the dataframe to the list
                 dfs_holder.append(df_read)
                 dfs_names.append(filename)
         
