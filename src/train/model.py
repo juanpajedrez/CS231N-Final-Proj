@@ -14,7 +14,6 @@ from torch.utils.tensorboard import SummaryWriter
 summary_writer = None
 
 OBJECTIVE = "overfit"
-ARCHITECTURE = helpers.Architectures.DENSENET
 
 if OBJECTIVE == "overfit":
     data_augmentation = True
@@ -126,5 +125,7 @@ def train(architecture, optimiser, num_epochs=10):
 
 if __name__ == "__main__":
     for architecture in (helpers.Architectures.DENSENET, helpers.Architectures.VGG, helpers.Architectures.RESNET):
-        summary_writer = SummaryWriter(f'runs/{ARCHITECTURE}_adam_10epochs_elu')
+        summary_writer = SummaryWriter(f'runs/{architecture}_adam_lr_5e5_relu_10epochs')
         train(architecture=architecture, optimiser=helpers.Optimisers.ADAM, num_epochs=10)
+
+    

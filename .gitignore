@@ -22,6 +22,9 @@ venv.bak/
 __pychache__
 *.pyc
 
+#logs
+logs
+
 # Wandb
 notebooks/wandb/
 

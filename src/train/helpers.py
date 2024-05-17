@@ -109,7 +109,7 @@ def custom_classifier(in_features, num_classes):
     # 3. activation functions
     return torch.nn.Sequential(
         torch.nn.Linear(in_features, 4096, bias=True),
-        torch.nn.ELU(),
+        torch.nn.ReLU(),
         torch.nn.Linear(4096, num_classes, bias=True),
     )
 
@@ -123,12 +123,13 @@ def get_optimiser(model, architecture, optimiser="adam"):
     elif architecture == Architectures.RESNET:
         parameters = model.fc.parameters()
     elif architecture == Architectures.VGG:
-        parameters = model.classifier[6].parameters()
+        parameters = model.classifier.parameters()
 
+    lr = 5e-5
     if optimiser == Optimisers.ADAM:
-        return torch.optim.Adam(parameters, lr=0.001)
+        return torch.optim.Adam(parameters, lr=lr)
     elif optimiser == Optimisers.SGD:
-        return torch.optim.SGD(parameters, lr=0.001, momentum=0.9)
+        return torch.optim.SGD(parameters, lr=lr, momentum=0.9)
 
 def get_model(architecture, num_classes):
     if architecture == Architectures.DENSENET:
