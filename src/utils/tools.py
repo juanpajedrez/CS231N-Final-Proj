@@ -131,7 +131,7 @@ def get_optimiser(config, model, lr_set:float = 5e-3):
 
 import torch.nn.functional as F
 
-def evaluate_model(model, data_loader, device:str):
+def evaluate_model(model, data_loader, labels, device:str):
     """
     Instance method that would evaluate with a given
     data loader, the accuracies obtained by the model passed
