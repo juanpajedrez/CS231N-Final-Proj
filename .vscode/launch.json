@@ -5,11 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "train",
+            //"name": "train",
+            "name": "run_gmvae",
             "type": "debugpy",
             "request": "launch",
-            "program": "src/train/model.py",
+            //"program": "src/train/model.py",
+            "program": "src/run_gmvae.py",
             "console": "integratedTerminal",
+            "args": ["--config-file", "configs/gmvae.yaml", "--train"],
         }
     ]
 }

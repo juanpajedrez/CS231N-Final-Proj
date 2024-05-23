@@ -24,22 +24,63 @@ from pprint import pprint
 
 # *** ADDED CODE: import fs_gmvae instead of gmvae ***
 from utils.models.fs_gmvae import FS_GMVAE
-
 from utils import tools as t
 
 # Import the necessary modules
 from utils import CXReader, DfReader
 
 if __name__ == "__main__":
+
     #Assign the main path to be here
     os.chdir(os.path.dirname(__file__))
 
-    # Create the data path
+    #Create the data path
     data_path = os.path.join(os.getcwd(), os.pardir, "data")
+    project_path = os.path.join(os.getcwd(), os.pardir, "meta")
 
-    # Check if cuda device is in
-    #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    device = "cpu"
+    #Check if cuda device is in
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    #Get the dataframes that are necessary
+    dfs_holder, dfs_names = tools.get_dataframes(
+        os.path.join(project_path, "meta"), diseases="all", data=data_size
+    )
+
+    #Obtain the transfor to use
+    transform = tools.get_transforms(data_augmentation)
+
+    train_loader, test_loader, val_loader = helpers.get_data_loaders(
+        dfs_holder, dfs_names, data_path, batch_size=batch_size, num_workers=2, data_augmentation=data_augmentation
+    )
+
+    _, sample_label = next(iter(train_loader))
+    num_classes = sample_label.shape[1]
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+
+
+
+
+    #Define the neural network
+    nn_type = 'GMVAE_CXR14_V1'
+
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config-file", type=str, required=True)
+    parser.add_argument("--train", action="store_true")
+    parser.add_argument("--test", action="store_true")
+    parser.add_argument("--val", action = "store_true")
+    args = parser.parse_args()
+
+    with open(args.config_file, 'r') as f:
+       config = yaml.safe_load(f)
+    if args.train:
+       train(config)
+    elif args.test or args.val:
+
+
     #train_loader, labeled_subset, _ = t.get_mnist_data(device, use_test_subset=True)
 
     #Create a dataframe compiler
@@ -69,13 +110,6 @@ if __name__ == "__main__":
     batch_size = 64
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
 
-    # See the dataloader to see the batches of data
-    #dataiter = iter(train_loader)
-    #noisy_img, org_img = dataiter._next_data()
-    #print(f"Shape of loading one batch: {noisy_img.shape}")
-    #print(f"Total no. of batches {len(train_loader)}")
-    #print(f"Total number of examples: {len(train_loader.dataset)}")
-
     #Create a labeled_subset tuple by iterating through 100 values of test dataset
     test_images = []
     test_labels = []
@@ -97,7 +131,6 @@ if __name__ == "__main__":
     # *** ADDED CODE: set z to 1280 (28*28 -> 224*224 is 64 times by size) ***
     parser.add_argument('--z',         type=int, default=1280,    help="Number of latent dimensions")
     parser.add_argument('--k',         type=int, default=500,   help="Number mixture components in MoG prior")
-    # parser.add_argument('--iter_max',  type=int, default=2000, help="Number of training iterations")
     parser.add_argument('--iter_max',  type=int, default=200, help="Number of training iterations")
     parser.add_argument('--iter_save', type=int, default=25, help="Save model every n iterations")
     parser.add_argument('--run',       type=int, default=0,     help="Run ID. In case you want to run replicates")

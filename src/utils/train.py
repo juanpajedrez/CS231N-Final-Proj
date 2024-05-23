@@ -20,14 +20,21 @@ from torch import nn, optim
 from torch.nn import functional as F
 from torchvision.utils import save_image
 
+from torch.utils.tensorboard import SummaryWriter
+
+#Get the optimizer
+from .tools import get_optimiser
+
 # *** ADDED CODE: Changed the name of an argument from "y_status" to "fs" (keeping same meaning) ***
-def train(model, train_loader, device, tqdm, writer,
+def train(model, train_loader, device, tqdm, writer:SummaryWriter, config,
           iter_max=np.inf, iter_save=np.inf,
-          model_name='model', fs=False, reinitialize=False):
+          fs=False, reinitialize=False):
     # Optimization
     if reinitialize:
         model.apply(t.reset_weights)
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+
+    #Lets get the optimizer
+    optimizer = get_optimiser(config, model)
     i = 0
 
     #Create lists to append the loss, gen/elbo, gen/kl_z, and gen/rec

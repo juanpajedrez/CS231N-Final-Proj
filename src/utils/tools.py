@@ -7,22 +7,189 @@ Date: 2024-04-30
 Current Authors: Juan Pablo Triana Martinez, Abhishek Kumar
 
 # We did use some come for reference of HW2 CS236 to do the primary setup from 2021 Rui Shu
+# Also, we added our own functions to get the pre processed data from.
 """
 
 import numpy as np
 import os
 import shutil
-import sys
 import torch
 
 # import tensorflow as tf
 from torch.nn import functional as F
-from torchvision import datasets, transforms
-#from utils.models.gmvae import GMVAE
+from torch.utils.data import DataLoader, RandomSampler
+from torchvision import transforms
+
+#Import the ncessary modules
+from .df_reader import DfReader
+from .fig_reader import CXReader
 
 bce = torch.nn.BCEWithLogitsLoss(reduction='none')
 mse = torch.nn.MSELoss(reduction="none")
 
+# ToDo: Currently this file is specific to training for Infiltration, which is the
+# highest class after No Finding. The hope is to get state of art accuracy on this
+def get_dataframes(df_path, diseases="all", data="all"):
+    # Create a dataframe compiler
+    df_compiler = DfReader(diseases, data)
+    # set the path and retrieve the dataframes
+    df_compiler.set_folder_path(df_path)
+    # Get the dataframe holder and names
+    dfs_holder, dfs_names = df_compiler.get_dfs()
+    return dfs_holder, dfs_names
+
+
+def get_data_loaders(
+    dfs_holder, dfs_names, data_path, batch_size, num_workers, data_augmentation
+):
+    # Create datasets and dataloaders
+    train_dataset = CXReader(
+        data_path=data_path,
+        dataframe=dfs_holder[dfs_names.index("train.csv")],
+        transform=get_transforms(data_augmentation),
+    )
+    test_dataset = CXReader(
+        data_path=data_path, 
+        dataframe=dfs_holder[dfs_names.index("test.csv")],
+        transform=get_transforms(False)
+    )
+    val_dataset = CXReader(
+        data_path=data_path, 
+        dataframe=dfs_holder[dfs_names.index("val.csv")],
+        transform=get_transforms(False)
+    )
+
+    # ToDo: In case of all classes, lets try to use weighted random sampler
+    sampler = RandomSampler(train_dataset, replacement=False)
+    train_loader = DataLoader(
+        train_dataset, batch_size=batch_size, num_workers=num_workers, sampler=sampler
+    )
+
+    transform_test_val = transforms.Compose([
+        transforms.Resize((224, 224)),  # Resize to 256x256
+        # transforms.CenterCrop((224, 224)),  # Center crop to 224x224
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+
+    test_loader = DataLoader(
+        test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+    )
+    val_loader = DataLoader(
+        val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+    )
+
+    return train_loader, test_loader, val_loader
+
+
+def get_transforms(augmentaiton=False):
+    normalize = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    if augmentaiton:
+        transform = transforms.Compose(
+            [
+                transforms.Resize(256),
+                transforms.TenCrop(224),
+                transforms.Lambda(
+                    lambda crops: torch.stack(
+                        [transforms.ToTensor()(crop) for crop in crops]
+                    )
+                ),
+                transforms.Lambda(
+                    lambda crops: torch.stack([normalize(crop) for crop in crops])
+                ),
+            ]
+        )
+    else:
+        transform = transforms.Compose(
+            [
+                transforms.Resize(256),
+                transforms.CenterCrop((224, 224)),  # Center crop to 224x224
+                transforms.ToTensor(),
+                normalize
+            ]
+        )
+    return transform
+
+
+def custom_classifier(in_features, num_classes):
+    # experiment knobs
+    # 1. size of hidden layer
+    # 2. number of hidden layers
+    # 3. activation functions
+    return torch.nn.Sequential(
+        torch.nn.Linear(in_features, 4096, bias=True),
+        torch.nn.ReLU(),
+        torch.nn.Linear(4096, num_classes, bias=True),
+    )
+
+def get_optimiser(config, model, lr_set:float = 5e-3):
+    lr = lr_set
+    if config["training"]["optimizer"] == "adam":
+        return torch.optim.Adam(model.parameters(), lr=lr)
+    elif config["training"]["optimizer"] == "sgd":
+        return torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
+
+import torch.nn.functional as F
+
+def evaluate_model(model, data_loader, device:str):
+    """
+    Instance method that would evaluate with a given
+    data loader, the accuracies obtained by the model passed
+    """
+    model.eval()
+    threshold = 0.5
+    accuracies = []
+    precisions = []
+    recalls = []
+    f1_scores = []
+
+    #Use no grad to not perform backpropagation for inference time
+    with torch.no_grad():
+        #Iterate through each of the images and labels
+        
+        # Calculate the total numbers for metrics
+        TP, FP, TN, FN = 0.0, 0.0, 0.0, 0.0
+        for idx, batch in enumerate(data_loader):
+    
+            #See if it works
+            images_inputs, images_labels = batch
+            images_inputs, images_labels = images_inputs.to(device), images_labels.to(device)
+
+            #Print the shape of each one of them
+            print(f"Inputs shape: {images_inputs.shape}, Labels shape: {labels.shape}")
+
+            #Send the outputs to model in device
+            outputs = model(images_inputs)
+
+            #Binarize the output with threshold
+            pred_labels = (outputs > threshold).float()
+
+            # Calculate batch-wise TP, FP, TN, FN
+            b_TP = torch.sum((pred_labels == 1) & (images_labels == 1)).item()
+            b_FP = torch.sum((pred_labels == 1) & (images_labels == 0)).item()
+            b_TN = torch.sum((pred_labels == 0) & (images_labels == 0)).item()
+            b_FN = torch.sum((pred_labels == 0) & (images_labels == 1)).item()
+            TP += b_TP
+            FP += b_FP
+            TN += b_TN
+            FN += b_FN
+
+        #_, predicted = torch.max(outputs, 1)  # Get the index of the maximum log-probability
+        accuracy = ((TP + TN) / (TP + FP + TN + FN)) * 100.0
+        precision = (TP / (TP + FP)) * 100.0 if (TP + FP) > 0 else 0.0
+        recall = (TP / (TP + FN)) * 100.0 if (TP + FN) > 0 else 0.0
+        f1_score = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+
+        print("Accuracy: {:.2f}%".format(accuracy))
+        print("Precision: {:.2f}%".format(precision))
+        print("Recall: {:.2f}%".format(recall))
+        print("F1 Score: {:.2f}%".format(f1_score))
+
+    return accuracies, precisions, recalls, f1_scores
+
+
+
+### ALL Helper functions that are necessary to get the 
 
 def save_model_by_name(model, global_step):
     save_dir = os.path.join('checkpoints', model.name)

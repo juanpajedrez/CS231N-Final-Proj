@@ -22,22 +22,15 @@ class Encoder(torch.nn.Module):
         self.z_dim = z_dim
         self.y_dim = y_dim
 
-        #Get the path to the model
-        model_path = os.path.join(os.path.dirname(__file__), \
-                "vgg16_finetune", "vgg16_finetune_params.pth")
-
         # Load pre-trained VGG16 model
-        vgg16_model = models.vgg16()
-        num_features = vgg16_model.classifier[-1].in_features
-        num_classes = 20
+        vgg16_model = models.vgg16(weights="IMAGENET1K_V1")
 
-        # Replace the classifier the same way it was finetuned
-        vgg16_model.classifier[-1] = nn.Linear(num_features, num_classes)
-        vgg16_model.classifier.add_module("sigmoid", nn.Sigmoid())
+        # Use only the features part and remove the classifier
+        self.features = vgg16_model.features
 
-        #Load the model with specific state
-        state = torch.load(model_path)
-        vgg16_model.load_state_dict(state)
+        # Set to evaluation mode if not fine-tuning
+        if not pretrained:
+            self.features.eval()
 
         # Use only the features part and remove the classifier
         self.features = vgg16_model.features
