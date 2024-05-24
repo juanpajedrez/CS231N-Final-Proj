@@ -3,8 +3,7 @@ training:
   lr: 0.005
   restore_ckpt: null
   num_epochs: 5
-  loss_fn: "crossentropy"
-  data_augmentation: False
+  data_augmentation: True
   data_size: "all"
   batch_size: 8
   optimizer: "adam"

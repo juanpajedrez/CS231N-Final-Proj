@@ -48,6 +48,15 @@ def train(model, train_loader, device, tqdm, writer:SummaryWriter, config,
                 i += 1 # i is num of gradient steps taken by end of loop iteration
                 optimizer.zero_grad()
                 xu, yu = batch
+
+                #If condition if xu is 4D tensor, make it three
+                if len(xu.shape) > 4:
+                    A, B, C, D, E = xu.shape
+                    xu = xu.view(A * B, C, D, E)
+
+                    # Repeat the labels tensor to match the collapsed xu structure
+                    yu = yu.unsqueeze(1).repeat(1, B, 1).view(A * B, -1)
+
                 xu = xu.to(device)
                 yu = yu.to(device)                
                 if fs is False:

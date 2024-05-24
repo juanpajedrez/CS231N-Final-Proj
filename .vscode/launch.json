@@ -5,14 +5,28 @@
     "version": "0.2.0",
     "configurations": [
         {
-            //"name": "train",
+            "name": "train",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "src/train/model.py",
+            "console": "integratedTerminal",
+        },
+        {
             "name": "run_gmvae",
             "type": "debugpy",
             "request": "launch",
-            //"program": "src/train/model.py",
             "program": "src/run_gmvae.py",
             "console": "integratedTerminal",
             "args": ["--config-file", "configs/gmvae.yaml", "--train"],
+        },
+        {
+            //"name": "train",
+            "name": "run_fs_gmvae",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "src/run_fs_gmvae.py",
+            "console": "integratedTerminal",
+            "args": ["--config-file", "configs/fs_gmvae.yaml", "--train"],
         }
     ]
 }

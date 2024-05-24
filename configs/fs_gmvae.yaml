@@ -3,20 +3,24 @@ training:
   lr: 0.005
   restore_ckpt: null
   num_epochs: 5
-  loss_fn: "crossentropy"
-  batch_size: 64
+  data_augmentation: False
+  data_size: "all"
+  batch_size: 8
   optimizer: "adam"
-test:
-  ckpt: null
+  num_workers: 0
 logging: # frequency in number of iterations
   log_freq: 5
   val_freq: 2000
   save_freq: 2000
   ckpt_dir: "./ckpts"
-inference:
-  output_file: "predictions.json"
-  gt_json: null 
-  checkpoint: null 
-  ngram: null 
 model: # Any model parameters
-  z_dim: 128
+  z: 300
+  k : 50
+  iter_max : 200
+  iter_save : 100
+  run: 0
+  train: 1
+  overwrite: 0
+  loss: "mse" 
+  nn_type: "FSVAE_CXR14_V1_Kuni"
+  num_classes : 14

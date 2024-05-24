@@ -18,7 +18,7 @@ from torch import nn
 from torch.nn import functional as F
 
 class FS_GMVAE(nn.Module):
-    def __init__(self, nn='FSVAE_CXR14_V1_Kuni', z_dim=2, k=500, name='gmvae', loss_type = "bce"):
+    def __init__(self, nn='FSVAE_CXR14_V1_Kuni', z_dim=2, k=500, name='gmvae', loss_type = "bce", y_dim = 14):
         super().__init__()
         self.name = name
         self.k = k
@@ -29,8 +29,8 @@ class FS_GMVAE(nn.Module):
         self.loss_type = loss_type
         
         # *** ADDED CODE: set y_dim to 20 ***
-        self.enc = nn.Encoder(self.z_dim, y_dim=20)
-        self.dec = nn.Decoder(self.z_dim, y_dim=20)
+        self.enc = nn.Encoder(self.z_dim, y_dim=y_dim)
+        self.dec = nn.Decoder(self.z_dim, y_dim=y_dim)
 
         # Mixture of Gaussians prior
         self.z_pre = torch.nn.Parameter(torch.randn(1, 2 * self.k, self.z_dim)

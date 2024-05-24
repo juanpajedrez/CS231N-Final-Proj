@@ -16,14 +16,11 @@ import tqdm
 import torch
 import yaml
 
-#Import necessary modules from torch to perform transformations.
-from pprint import pprint
-
 # == ADDED CODE that is necessary == #
 from utils.models.gmvae import GMVAE
 from utils import tools as t
 
-#Import the necessary modukes
+#Import the necessary modules
 from utils import train
 from torch.utils.tensorboard import SummaryWriter
 
