@@ -41,7 +41,7 @@ if __name__ == "__main__":
     os.chdir(os.path.dirname(__file__))
 
     #Create the data path
-    data_path = os.path.join(os.getcwd(), os.pardir, "data", "images")
+    data_path = os.path.join(os.getcwd(), os.pardir, "data", "images", "images")
     project_path = os.path.join(os.getcwd(), os.pardir, "meta")
 
     #Check if cuda device is in
