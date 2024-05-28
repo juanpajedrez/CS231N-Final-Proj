@@ -1,0 +1,15 @@
+numpy
+scikit-learn 
+matplotlib 
+pandas
+tqdm
+pyyaml
+regex
+requests
+python-dotenv
+PyYAML
+
+--find-links https://download.pytorch.org/whl/torch_stable.html
+torch
+torchinfo 
+torchvision
