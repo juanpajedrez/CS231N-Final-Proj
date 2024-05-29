@@ -7,17 +7,10 @@ from sklearn.metrics import roc_auc_score
 from torch.utils.data import DataLoader, RandomSampler
 from torchvision import models, transforms
 
+from train.constants import Architectures, Optimisers
 from utils.df_reader import DfReader
 from utils.fig_reader import CXReader
 
-class Architectures:
-    VGG = 'vgg'
-    DENSENET = 'densenet'
-    RESNET = 'resnet'
-
-class Optimisers:
-    ADAM = 'adam'
-    SGD = 'sgd'
 
 # ToDo: Currently this file is specific to training for Infiltration, which is the
 # highest class after No Finding. The hope is to get state of art accuracy on this
@@ -41,14 +34,14 @@ def get_data_loaders(
         transform=get_transforms(data_augmentation),
     )
     test_dataset = CXReader(
-        data_path=data_path, 
+        data_path=data_path,
         dataframe=dfs_holder[dfs_names.index("test.csv")],
-        transform=get_transforms(False)
+        transform=get_transforms(False),
     )
     val_dataset = CXReader(
-        data_path=data_path, 
+        data_path=data_path,
         dataframe=dfs_holder[dfs_names.index("val.csv")],
-        transform=get_transforms(False)
+        transform=get_transforms(False),
     )
 
     # ToDo: In case of all classes, lets try to use weighted random sampler
@@ -56,13 +49,6 @@ def get_data_loaders(
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, num_workers=num_workers, sampler=sampler
     )
-
-    transform_test_val = transforms.Compose([
-        transforms.Resize((224, 224)),  # Resize to 256x256
-        # transforms.CenterCrop((224, 224)),  # Center crop to 224x224
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
 
     test_loader = DataLoader(
         test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
@@ -93,11 +79,7 @@ def get_transforms(augmentaiton=False):
         )
     else:
         transform = transforms.Compose(
-            [
-                transforms.Resize(256),
-                transforms.ToTensor(),
-                normalize
-            ]
+            [transforms.CenterCrop(224), transforms.ToTensor(), normalize]
         )
     return transform
 
@@ -131,6 +113,7 @@ def get_optimiser(model, architecture, optimiser="adam"):
     elif optimiser == Optimisers.SGD:
         return torch.optim.SGD(parameters, lr=lr, momentum=0.9)
 
+
 def get_model(architecture, num_classes):
     if architecture == Architectures.DENSENET:
         return densenet_121(num_classes)
@@ -156,7 +139,7 @@ def densenet_121(num_classes):
 
 def resnet_18(num_classes):
     # get pretrained model
-    resnet18 = models.resnet18(weights='DEFAULT')
+    resnet18 = models.resnet18(weights="DEFAULT")
 
     # freeze parameters
     for param in resnet18.parameters():
@@ -171,7 +154,7 @@ def resnet_18(num_classes):
 
 def vgg_16(num_classes):
     # get pretrained model
-    vgg16 = models.vgg16(weights='DEFAULT')
+    vgg16 = models.vgg16(weights="DEFAULT")
 
     # freeze parameters
     for param in vgg16.parameters():
@@ -194,9 +177,10 @@ def compute_auc(labels, predictions):
     pred_np = predictions.numpy()
     return roc_auc_score(gt_np, pred_np, average="macro")
 
+
 def pprint(*args):
     print(" ".join(map(str, args)))
-    with open('logs/log.txt', 'a') as f:
+    with open("logs/log.txt", "a") as f:
         print(" ".join(map(str, args)), file=f, flush=True)
 
 

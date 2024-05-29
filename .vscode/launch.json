@@ -27,6 +27,14 @@
             "program": "src/run_fs_gmvae.py",
             "console": "integratedTerminal",
             "args": ["--config-file", "configs/fs_gmvae.yaml", "--train"],
+        },
+        {
+            "name": "test_vae",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "src/train/vae.py",
+            "console": "integratedTerminal",
+            "args": [],
         }
     ]
 }
