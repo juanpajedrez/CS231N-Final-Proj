@@ -41,7 +41,8 @@ if __name__ == "__main__":
     os.chdir(os.path.dirname(__file__))
 
     #Create the data path
-    data_path = os.path.join(os.getcwd(), os.pardir, "data", "images", "images")
+    #data_path = os.path.join(os.getcwd(), os.pardir, "data", "images", "images")
+    data_path = os.path.join(os.getcwd(), os.pardir, "data", "images")
     project_path = os.path.join(os.getcwd(), os.pardir, "meta")
 
     #Check if cuda device is in
@@ -67,7 +68,7 @@ if __name__ == "__main__":
     #Obtain the device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     layout = [
-        ('model={:s}',  'gmvaetest'+config["model"]["loss"]),
+        ('model={:s}',  'gmvae'+ config["model"]["nn_type"]+config["model"]["loss"]),
         ('z={:02d}',  config["model"]["z"]),
         ('k={:03d}',  config["model"]["k"]),
         ('run={:04d}', config["model"]["run"])

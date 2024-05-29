@@ -7,12 +7,9 @@ Date: 2024-04-30
 Current Authors: Juan Pablo Triana Martinez, Abhishek Kumar
 """
 
-import numpy as np
 import torch
-import torch.nn.functional as F
 from utils import tools as t
-from torch import autograd, nn, optim
-from torch.nn import functional as F
+from torch import nn
 import torchvision.models as models
 
 class Encoder(torch.nn.Module):
@@ -29,9 +26,12 @@ class Encoder(torch.nn.Module):
         # Set to evaluation mode if not fine-tuning
         if not pretrained:
             self.features.eval()
-        
+
+        #Obtain the number of features from vvg16
+        num_features = vgg16_model.classifier[0].in_features
+
         # Convolutional layer with kernel size 1x1
-        self.conv1x1 = nn.Conv2d(512, 300, kernel_size=1)
+        self.conv1x1 = nn.Conv2d(num_features, 300, kernel_size=1)
         
         # Batch normalization
         self.batch_norm = nn.BatchNorm2d(300)

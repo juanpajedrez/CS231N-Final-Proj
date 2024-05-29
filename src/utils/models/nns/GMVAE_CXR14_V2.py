@@ -1,10 +1,13 @@
 """
-Date: 2023-11-14
-Original Authors: Kuniaki Iwanami, Juan Pablo Triana Martinez, 
-Based Project: CS236 Final Project, GMVAE for X-rays images.
-
-Date: 2024-04-30
+Date: 2024-05-29
 Current Authors: Juan Pablo Triana Martinez, Abhishek Kumar
+
+Here, we got rid of the transition layer. We also got the Z space directly from the
+VGG16 features, then passed it through a linear layer which controlled with a Z dimension;
+for gaussian mixture mu and covariance k component.
+
+We kept also initial decoder for now; next version would include first iteration
+with convtranspose2d
 """
 
 import torch
@@ -34,43 +37,22 @@ class Encoder(torch.nn.Module):
         # Set to evaluation mode if not fine-tuning
         if not pretrained:
             self.features.eval()
-
+        
         #Obtain the number of features from vvg16
         num_features = vgg16_model.classifier[0].in_features
-
-        # Convolutional layer with kernel size 1x1
-        self.conv1x1 = nn.Conv2d(num_features, 300, kernel_size=1)
-
-        # Batch normalization
-        self.batch_norm = nn.BatchNorm2d(300)
-        
-        # ReLU activation
-        self.relu = nn.ReLU(inplace=True)
-        
-        # Max pooling with kernel size equal to the feature map size
-        self.max_pool = nn.MaxPool2d(kernel_size=7)
 
         #Obtain the net
         # z space to sample from
         self.net = nn.Sequential(
-            nn.Linear(300, 2 * z_dim),
+            nn.Linear(num_features, 2 * z_dim),
         )
 
     def forward(self, x):
         # Create feature map from vgget16
         feat_map = self.features(x)
 
-        # Apply operations to obtain transition layer from paper
-        h = self.conv1x1(feat_map)
-        h = self.batch_norm(h)
-        h = self.relu(h)
-        h = self.max_pool(h)
-
-        # Convert output from 3, 300, 1, 1 to 3, 300
-        h = h.view(h.shape[0], h.shape[1])
-
         #Now pass it through the net to obtain gaussian space
-        g = self.net(h)
+        g = self.net(feat_map)
 
         #Pass the feature space and get gaussian parameters
         m, v = t.gaussian_parameters(g, dim=1)
