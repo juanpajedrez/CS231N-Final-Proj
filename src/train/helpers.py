@@ -1,3 +1,4 @@
+import datetime
 import os
 import random
 
@@ -47,7 +48,7 @@ def get_data_loaders(
     # ToDo: In case of all classes, lets try to use weighted random sampler
     sampler = RandomSampler(train_dataset, replacement=False)
     train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, num_workers=num_workers, sampler=sampler
+        train_dataset, batch_size=batch_size, num_workers=num_workers, sampler=sampler, pin_memory=True
     )
 
     test_loader = DataLoader(
@@ -193,3 +194,14 @@ def seed_everything(seed=42):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
+
+def p_print(*args):
+    print(" ".join(map(str, args)))
+
+    # if log directory does not exist, create it
+    if not os.path.exists('logs'):
+        os.makedirs('logs')
+    
+    # open the file in append mode
+    with open('logs/log.txt', 'a') as f:
+        print(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + ' ' + " ".join(map(str, args)), file=f, flush=True)

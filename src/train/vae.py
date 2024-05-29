@@ -1,3 +1,5 @@
+import datetime
+import itertools
 import os
 import sys
 
@@ -5,6 +7,7 @@ import torch
 import torch.optim as optim
 from torch import nn
 from torchvision import models
+from torch.utils.tensorboard import SummaryWriter
 
 project_path = os.environ.get("PROJECT_PATH")
 data_path = os.environ.get("DATA_PATH")
@@ -13,7 +16,7 @@ data_path = os.environ.get("DATA_PATH")
 sys.path.append(os.path.join(project_path, "src"))
 
 from train.constants import Architectures
-from train.helpers import get_data_loaders, get_dataframes
+from train.helpers import get_data_loaders, get_dataframes, p_print
 
 
 def get_encoder(architecture):
@@ -55,10 +58,11 @@ def get_decoder(architecture):
 
 class VAE(nn.Module):
 
-    def __init__(self, architecture=Architectures.VGG, dim_z=2744, dim_y=0, beta=1) -> None:
+    def __init__(self, architecture=Architectures.VGG, dim_z=2744, dim_y=0, beta=0.002) -> None:
         super(VAE, self).__init__()
 
         self.encoder_module = get_encoder(architecture)
+        self.dim_z = dim_z
 
         ## Encoder
         # VGG16 gives 512x7x7 (25088) feature map in the end. Lets treat it as a feature
@@ -107,21 +111,48 @@ class VAE(nn.Module):
         kl_divergence = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         return reconstruction_loss + self.beta * kl_divergence
 
+    def sample(self, num_samples=1):
+        z = torch.randn(num_samples, self.dim_z)
+        s = self.decode(z)
+        return s.detach()
+
+    def load_from_checkpoint(self, path):
+        self.load_state_dict(torch.load(path))
+
+def evaluate(model, data_loader):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    batches_to_eval = 20
+
+    cycle_loader = iter(data_loader)
+
+    loss = 0
+    model.eval()
+    with torch.no_grad():
+        for i in range(batches_to_eval):
+            images, _ = next(cycle_loader)
+            images = images.to(device)
+            x_hat, *_ = model(images)
+            loss += nn.functional.mse_loss(images, x_hat, reduction="mean").item()
+
+    return loss / batches_to_eval
+
 
 def train(learning_rate=1e-4):
+    # summary_writer = SummaryWriter(f"runs/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-toy-vae-10-epochs")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     print("Using device", device)
 
-    data_size = "small"
+    data_size = "all"
     data_augmentation = False
-    batch_size = 32
+    batch_size = 64
 
     dfs_holder, dfs_names = get_dataframes(
         os.path.join(project_path, "meta"), diseases="all", data=data_size
     )
 
-    train_loader, *_ = get_data_loaders(
+    train_loader, test_loader, val_loader = get_data_loaders(
         dfs_holder,
         dfs_names,
         data_path,
@@ -135,8 +166,15 @@ def train(learning_rate=1e-4):
     # Define the optimizer
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
+    model_name = f"models/vae/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-toy-vae-50-epochs"
+
+    # cycle_loader = iter(train_loader)
+
     # Training loop
     num_epochs = 10
+    best_val_loss = 1e5
+    # batch_per_epoch = 100
+
     for epoch in range(num_epochs):
         model.train()
         for i, (images, _) in enumerate(train_loader):
@@ -149,11 +187,18 @@ def train(learning_rate=1e-4):
             optimizer.step()
 
             if i % 10 == 0:
-                print(f"Epoch {epoch}, Iteration {i}, Loss {loss.item()}")
+                p_print("Epoch: ", epoch, "Iteration: ", i, "Loss: ", loss.item())
+                # summary_writer.add_scalar("loss", loss.item(), epoch * len(train_loader) + i)
 
-        # Save model
-        torch.save(model.state_dict(), f"model_{epoch}.pth")
+        
+        val_loss = evaluate(model, val_loader)
 
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), model_name)
+            print("saved model")
+        
+        p_print(f"Epoch: {epoch}, Val_Loss: {val_loss}")
 
 if __name__ == "__main__":
     train()
