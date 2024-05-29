@@ -50,6 +50,7 @@ class Encoder(torch.nn.Module):
     def forward(self, x):
         # Create feature map from vgget16
         feat_map = self.features(x)
+        feat_map = feat_map.view(feat_map.shape[0], -1)
 
         #Now pass it through the net to obtain gaussian space
         g = self.net(feat_map)

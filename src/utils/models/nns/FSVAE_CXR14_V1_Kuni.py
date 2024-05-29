@@ -27,11 +27,8 @@ class Encoder(torch.nn.Module):
         if not pretrained:
             self.features.eval()
 
-        #Obtain the number of features from vvg16
-        num_features = vgg16_model.classifier[0].in_features
-
         # Convolutional layer with kernel size 1x1
-        self.conv1x1 = nn.Conv2d(num_features, 300, kernel_size=1)
+        self.conv1x1 = nn.Conv2d(512, 300, kernel_size=1)
         
         # Batch normalization
         self.batch_norm = nn.BatchNorm2d(300)
