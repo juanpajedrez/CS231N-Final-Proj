@@ -31,13 +31,6 @@ class Encoder(torch.nn.Module):
         self.features = densenet121.features
 
         # Set to evaluation mode if not fine-tuning
-        if not pretrained:
-            self.features.eval()
-
-        # Use only the features part and remove the classifier
-        self.features = densenet121.features
-
-        # # Set to evaluation mode if not fine-tuning
         # if not pretrained:
         #     self.features.eval()
         
@@ -50,7 +43,7 @@ class Encoder(torch.nn.Module):
             # Batch normalization
             nn.BatchNorm2d(num_features),
             # Max pooling with kernel size equal to the feature map size
-            nn.AvgPool2d(kernel_size=7),
+            nn.MaxPool2d(kernel_size=7),
             ## Flatten from (Batch_num, 1024, 1, 1) -> (Batch_num, 1024)
             nn.Flatten(),
             nn.Linear(num_features, 2 * z_dim),
