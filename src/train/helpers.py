@@ -26,8 +26,24 @@ def get_dataframes(df_path, diseases="all", data="all"):
 
 
 def get_data_loaders(
-    dfs_holder, dfs_names, data_path, batch_size, num_workers, data_augmentation, rank, world_size, use_multi_gpu
+    dfs_holder,
+    dfs_names,
+    data_path,
+    batch_size,
+    num_workers,
+    data_augmentation,
+    rank=0,
+    world_size=1,
+    use_multi_gpu=False,
 ):
+    
+    datasets = [
+        ('train', 'train.csv', True),
+        ('test', 'test.csv', False),
+        ('val', 'val.csv', False)
+    ]
+    
+    
     # Create datasets and dataloaders
     train_dataset = CXReader(
         data_path=data_path,
@@ -47,26 +63,46 @@ def get_data_loaders(
 
     # ToDo: In case of all classes, lets try to use weighted random sampler
     train_loader = create_data_loader(
-        train_dataset, batch_size, use_multi_gpu, world_size=world_size, rank=rank, shuffle=True)
-
-
-    sampler = RandomSampler(train_dataset, replacement=False)
-    train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, num_workers=num_workers, sampler=sampler, pin_memory=True
+        train_dataset,
+        batch_size,
+        use_multi_gpu,
+        num_workers,
+        world_size=world_size,
+        rank=rank,
+        shuffle=True,
     )
 
-    test_loader = DataLoader(
-        test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+    test_loader = create_data_loader(
+        test_dataset,
+        batch_size,
+        use_multi_gpu,
+        num_workers,
+        world_size=world_size,
+        rank=rank,
+        shuffle=False,
     )
-    val_loader = DataLoader(
-        val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+
+    val_loader = create_data_loader(
+        val_dataset,
+        batch_size,
+        use_multi_gpu,
+        num_workers,
+        world_size=world_size,
+        rank=rank,
+        shuffle=False,
     )
 
     return train_loader, test_loader, val_loader
 
 
 def create_data_loader(
-    data, batch_size, use_multi_gpu, world_size=None, rank=None, shuffle=False
+    data,
+    batch_size,
+    use_multi_gpu,
+    num_workers,
+    world_size=None,
+    rank=None,
+    shuffle=False,
 ):
     # send a distributed data sampler if using GPU otherwise, just return a data loader with shuffle
     if use_multi_gpu:
@@ -74,12 +110,20 @@ def create_data_loader(
             data, num_replicas=world_size, rank=rank, shuffle=shuffle
         )
         return DataLoader(
-            data, batch_size=batch_size, sampler=sampler
+            data,
+            batch_size=batch_size,
+            sampler=sampler,
+            num_workers=num_workers,
+            pin_memory=True,
         )
     else:
         sampler = RandomSampler(data, replacement=False)
         return DataLoader(
-            data, batch_size=batch_size, sampler=sampler
+            data,
+            batch_size=batch_size,
+            sampler=sampler,
+            num_workers=num_workers,
+            pin_memory=True,
         )
 
 
@@ -217,13 +261,20 @@ def seed_everything(seed=42):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
+
 def p_print(*args):
     print(" ".join(map(str, args)))
 
     # if log directory does not exist, create it
-    if not os.path.exists('logs'):
-        os.makedirs('logs')
-    
+    if not os.path.exists("logs"):
+        os.makedirs("logs")
+
     # open the file in append mode
-    with open('logs/log.txt', 'a') as f:
-        print(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + ' ' + " ".join(map(str, args)), file=f, flush=True)
+    with open("logs/log.txt", "a") as f:
+        print(
+            datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            + " "
+            + " ".join(map(str, args)),
+            file=f,
+            flush=True,
+        )

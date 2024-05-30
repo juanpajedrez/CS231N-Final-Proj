@@ -33,24 +33,35 @@ def get_encoder(architecture):
     return features_module
 
 
-def get_decoder(architecture):
+class Reshape(nn.Module):
+    def __init__(self, new_shape):
+        super(Reshape, self).__init__()
+        self.new_shape = new_shape  # Define the target shape excluding the batch size
+
+    def forward(self, x):
+        return x.view(x.size(0), *self.new_shape)  # x.size(0) is the batch size
+
+
+def get_decoder(architecture, dim_z):
     if architecture == Architectures.VGG:
         # incoming image is of 14 * 14 * 14
         decoder = nn.Sequential(
+            nn.Linear(dim_z, 128 * 14 * 14),
+            Reshape((128, 14, 14)),
             # 14 * 14 -> 28 * 28
-            nn.ConvTranspose2d(14, 6, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm2d(6),
+            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
             # 28 * 28 -> 56 * 56
-            nn.ConvTranspose2d(6, 3, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm2d(3),
+            nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
             # 56 * 56 -> 112 * 112
-            nn.ConvTranspose2d(3, 3, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm2d(3),
+            nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(16),
             nn.ReLU(inplace=True),
             # 112 * 112 -> 224 * 224
-            nn.ConvTranspose2d(3, 3, kernel_size=4, stride=2, padding=1),
+            nn.ConvTranspose2d(16, 3, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm2d(3),
             nn.ReLU(inplace=True),
         )
@@ -60,7 +71,7 @@ def get_decoder(architecture):
 class VAE(nn.Module):
 
     def __init__(
-        self, architecture=Architectures.VGG, dim_z=2744, dim_y=0, beta=0.002
+        self, architecture=Architectures.VGG, dim_z=1000, dim_y=0, beta=0.1
     ) -> None:
         super(VAE, self).__init__()
 
@@ -71,17 +82,31 @@ class VAE(nn.Module):
         # VGG16 gives 512x7x7 (25088) feature map in the end. Lets treat it as a feature
         # and learn mu and logvar from it
         # f_theta_z
-        features_out_dim = 512 * 7 * 7
+        # features_out_dim = 512 * 7 * 7
+
+        # lets downsample it to dim_z
+        self.downsample = nn.Sequential(
+            nn.Conv2d(512, 256, kernel_size=1),  # 512x7x7 -> 256x7x7
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 128, kernel_size=1),  # 256x7x7 -> 128x7x7
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(128),
+        )
+
+        features_out_dim = 128 * 7 * 7
+
         self.mu = nn.Sequential(nn.Linear(features_out_dim, dim_z), nn.ReLU())
         self.logvar = nn.Sequential(nn.Linear(features_out_dim, dim_z), nn.ReLU())
 
-        self.decoder_module = get_decoder(architecture)
+        self.decoder_module = get_decoder(architecture, self.dim_z)
 
         self.beta = beta
 
     def encode(self, x):
-        # x should be of shape (batch_size, 512, 7, 7)
+        # x should be of shape (batch_size, 128, 7, 7)
         x = self.encoder_module(x)
+
+        x = self.downsample(x)
 
         # Flatten it
         x = x.view(x.size(0), -1)
@@ -98,7 +123,7 @@ class VAE(nn.Module):
 
     def decode(self, z, y=None):
         # reshape the incoming z into 14 * 14 * 14
-        z = z.view(-1, 14, 14, 14)
+        z = z.view(-1, self.dim_z)
         return self.decoder_module(z)
 
     def forward(self, x):
@@ -126,7 +151,7 @@ class VAE(nn.Module):
 def evaluate(model, data_loader):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    batches_to_eval = 20
+    batches_to_eval = min(20, len(data_loader))
 
     cycle_loader = iter(data_loader)
 
@@ -141,12 +166,23 @@ def evaluate(model, data_loader):
 
     return loss / batches_to_eval
 
-def get_model(model):
-  if isinstance(model, nn.DataParallel) or isinstance(model, nn.parallel.DistributedDataParallel):
-    return model.module
-  return model
 
-def train(rank, world_size, learning_rate=1e-4, data_size="all", data_augmentation=False, batch_size=64):
+def get_model(model):
+    if isinstance(model, nn.DataParallel) or isinstance(
+        model, nn.parallel.DistributedDataParallel
+    ):
+        return model.module
+    return model
+
+
+def train(
+    rank,
+    world_size,
+    learning_rate=1e-4,
+    data_size="all",
+    data_augmentation=False,
+    batch_size=64,
+):
     # summary_writer = SummaryWriter(f"runs/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-toy-vae-10-epochs")
 
     if world_size > 1:
@@ -182,12 +218,12 @@ def train(rank, world_size, learning_rate=1e-4, data_size="all", data_augmentati
     # Define the optimizer
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-    model_name = f"models/vae/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-toy-vae-50-epochs"
+    model_name = f"models/vae/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-toy-vae-20-epochs"
 
     # cycle_loader = iter(train_loader)
 
     # Training loop
-    num_epochs = 10
+    num_epochs = 20
     best_val_loss = 1e5
     # batch_per_epoch = 100
 
@@ -202,18 +238,19 @@ def train(rank, world_size, learning_rate=1e-4, data_size="all", data_augmentati
             loss.backward()
             optimizer.step()
 
-            if i % 10 == 0:
+            if rank == 0 and i % 10 == 0:
                 p_print("Epoch: ", epoch, "Iteration: ", i, "Loss: ", loss.item())
                 # summary_writer.add_scalar("loss", loss.item(), epoch * len(train_loader) + i)
 
-        val_loss = evaluate(model, val_loader)
+        if rank == 0:
+            val_loss = evaluate(model, val_loader)
 
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            torch.save(model.state_dict(), model_name)
-            print("saved model")
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                torch.save(model.state_dict(), model_name)
+                print("saved model")
 
-        p_print(f"Epoch: {epoch}, Val_Loss: {val_loss}")
+            p_print(f"Epoch: {epoch}, Val_Loss: {val_loss}")
 
 
 def setup(rank, world_size):
@@ -243,4 +280,3 @@ if __name__ == "__main__":
         )
     else:
         train(0)
-
