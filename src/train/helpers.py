@@ -5,7 +5,7 @@ import random
 import numpy as np
 import torch
 from sklearn.metrics import roc_auc_score
-from torch.utils.data import DataLoader, RandomSampler
+from torch.utils.data import DataLoader, RandomSampler, DistributedSampler
 from torchvision import models, transforms
 
 from train.constants import Architectures, Optimisers
@@ -26,7 +26,7 @@ def get_dataframes(df_path, diseases="all", data="all"):
 
 
 def get_data_loaders(
-    dfs_holder, dfs_names, data_path, batch_size, num_workers, data_augmentation
+    dfs_holder, dfs_names, data_path, batch_size, num_workers, data_augmentation, rank, world_size, use_multi_gpu
 ):
     # Create datasets and dataloaders
     train_dataset = CXReader(
@@ -46,6 +46,10 @@ def get_data_loaders(
     )
 
     # ToDo: In case of all classes, lets try to use weighted random sampler
+    train_loader = create_data_loader(
+        train_dataset, batch_size, use_multi_gpu, world_size=world_size, rank=rank, shuffle=True)
+
+
     sampler = RandomSampler(train_dataset, replacement=False)
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, num_workers=num_workers, sampler=sampler, pin_memory=True
@@ -59,6 +63,24 @@ def get_data_loaders(
     )
 
     return train_loader, test_loader, val_loader
+
+
+def create_data_loader(
+    data, batch_size, use_multi_gpu, world_size=None, rank=None, shuffle=False
+):
+    # send a distributed data sampler if using GPU otherwise, just return a data loader with shuffle
+    if use_multi_gpu:
+        sampler = DistributedSampler(
+            data, num_replicas=world_size, rank=rank, shuffle=shuffle
+        )
+        return DataLoader(
+            data, batch_size=batch_size, sampler=sampler
+        )
+    else:
+        sampler = RandomSampler(data, replacement=False)
+        return DataLoader(
+            data, batch_size=batch_size, sampler=sampler
+        )
 
 
 def get_transforms(augmentaiton=False):

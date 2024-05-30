@@ -47,6 +47,7 @@ class Encoder(torch.nn.Module):
     def forward(self, x):
         # Create feature map from vgget16
         feat_map = self.features(x)
+        feat_map = feat_map.view(feat_map.shape[0], -1)
 
         #Now pass it through the net to obtain gaussian space
         g = self.net(feat_map)
@@ -68,23 +69,24 @@ class Decoder(nn.Module):
         self.y_dim = y_dim
         self.net = nn.Sequential(
             nn.Linear(z_dim + y_dim, 14* 14 *14),
-            nn.ReLU(inplace=True),
+            nn.ELU(inplace=True),
+            nn.Unflatten(1, (14, 14, 14)),
             # 14 * 14 -> 28 * 28
             nn.ConvTranspose2d(14, 6, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm2d(6),
-            nn.ReLU(inplace=True),
+            nn.ELU(inplace=True),
             # 28 * 28 -> 56 * 56
             nn.ConvTranspose2d(6, 3, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm2d(3),
-            nn.ReLU(inplace=True),
+            nn.ELU(inplace=True),
             # 56 * 56 -> 112 * 112
             nn.ConvTranspose2d(3, 3, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm2d(3),
-            nn.ReLU(inplace=True),
+            nn.ELU(inplace=True),
             # 112 * 112 -> 224 * 224
             nn.ConvTranspose2d(3, 3, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm2d(3),
-            nn.ReLU(inplace=True),
+            nn.ELU(inplace=True),
         )
 
     def forward(self, z, y=None):

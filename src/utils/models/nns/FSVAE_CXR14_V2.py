@@ -41,6 +41,7 @@ class Encoder(torch.nn.Module):
     def forward(self, x, y=None):
         # Create feature map from vgget16
         feat_map = self.features(x)
+        feat_map = feat_map.view(feat_map.shape[0], -1)
 
         # ADDED CODE: Applying y (labels)
         hy = feat_map if y is None else torch.cat((feat_map, y), dim=-1)

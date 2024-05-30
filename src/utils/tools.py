@@ -238,10 +238,10 @@ def log_pixel_with_logits(x, logits):
     THIS FUNCTION Uses a specific designed loss
     """
     # scale the input betwen 0 to 1
-    x = scale_to_01(x)
+    #x = scale_to_01(x)
 
     # Obtain the sigmoid of the logits
-    logits = torch.sigmoid(logits)
+    #logits = torch.sigmoid(logits)
 
     # Calculate min and max values for all batches
     # min_values = x.min().item()

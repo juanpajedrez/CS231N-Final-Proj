@@ -37,7 +37,7 @@ class Encoder(torch.nn.Module):
         num_features = vgg16_model.classifier[0].in_features
 
         # Convolutional layer with kernel size 1x1
-        self.conv1x1 = nn.Conv2d(num_features, 300, kernel_size=1)
+        self.conv1x1 = nn.Conv2d(512, 300, kernel_size=1)
 
         # Batch normalization
         self.batch_norm = nn.BatchNorm2d(300)
@@ -86,23 +86,24 @@ class Decoder(nn.Module):
         self.y_dim = y_dim
         self.net = nn.Sequential(
             nn.Linear(z_dim + y_dim, 14* 14 *14),
-            nn.ReLU(inplace=True),
+            nn.ELU(inplace=True),
+            nn.Unflatten(1, (14, 14, 14)),
             # 14 * 14 -> 28 * 28
             nn.ConvTranspose2d(14, 6, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm2d(6),
-            nn.ReLU(inplace=True),
+            nn.ELU(inplace=True),
             # 28 * 28 -> 56 * 56
             nn.ConvTranspose2d(6, 3, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm2d(3),
-            nn.ReLU(inplace=True),
+            nn.ELU(inplace=True),
             # 56 * 56 -> 112 * 112
             nn.ConvTranspose2d(3, 3, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm2d(3),
-            nn.ReLU(inplace=True),
+            nn.ELU(inplace=True),
             # 112 * 112 -> 224 * 224
             nn.ConvTranspose2d(3, 3, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm2d(3),
-            nn.ReLU(inplace=True),
+            nn.ELU(inplace=True),
         )
 
     def forward(self, z, y=None):

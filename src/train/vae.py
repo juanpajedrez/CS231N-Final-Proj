@@ -1,13 +1,14 @@
 import datetime
-import itertools
 import os
 import sys
 
 import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
 import torch.optim as optim
 from torch import nn
-from torchvision import models
 from torch.utils.tensorboard import SummaryWriter
+from torchvision import models
 
 project_path = os.environ.get("PROJECT_PATH")
 data_path = os.environ.get("DATA_PATH")
@@ -58,7 +59,9 @@ def get_decoder(architecture):
 
 class VAE(nn.Module):
 
-    def __init__(self, architecture=Architectures.VGG, dim_z=2744, dim_y=0, beta=0.002) -> None:
+    def __init__(
+        self, architecture=Architectures.VGG, dim_z=2744, dim_y=0, beta=0.002
+    ) -> None:
         super(VAE, self).__init__()
 
         self.encoder_module = get_encoder(architecture)
@@ -119,6 +122,7 @@ class VAE(nn.Module):
     def load_from_checkpoint(self, path):
         self.load_state_dict(torch.load(path))
 
+
 def evaluate(model, data_loader):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -137,16 +141,23 @@ def evaluate(model, data_loader):
 
     return loss / batches_to_eval
 
+def get_model(model):
+  if isinstance(model, nn.DataParallel) or isinstance(model, nn.parallel.DistributedDataParallel):
+    return model.module
+  return model
 
-def train(learning_rate=1e-4):
+def train(rank, world_size, learning_rate=1e-4, data_size="all", data_augmentation=False, batch_size=64):
     # summary_writer = SummaryWriter(f"runs/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-toy-vae-10-epochs")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if world_size > 1:
+        setup(rank, world_size)
+        device = torch.device(rank)
+        use_multi_gpu = True
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        use_multi_gpu = False
 
     print("Using device", device)
-
-    data_size = "all"
-    data_augmentation = False
-    batch_size = 64
 
     dfs_holder, dfs_names = get_dataframes(
         os.path.join(project_path, "meta"), diseases="all", data=data_size
@@ -159,9 +170,14 @@ def train(learning_rate=1e-4):
         batch_size=batch_size,
         num_workers=2,
         data_augmentation=data_augmentation,
+        rank=rank,
+        world_size=world_size,
+        use_multi_gpu=use_multi_gpu,
     )
 
     model = VAE(Architectures.VGG).to(device)
+
+    # model = get_model(model)
 
     # Define the optimizer
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -190,15 +206,41 @@ def train(learning_rate=1e-4):
                 p_print("Epoch: ", epoch, "Iteration: ", i, "Loss: ", loss.item())
                 # summary_writer.add_scalar("loss", loss.item(), epoch * len(train_loader) + i)
 
-        
         val_loss = evaluate(model, val_loader)
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(model.state_dict(), model_name)
             print("saved model")
-        
+
         p_print(f"Epoch: {epoch}, Val_Loss: {val_loss}")
 
+
+def setup(rank, world_size):
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "12355"
+    dist.init_process_group(
+        "nccl",  # NCCL backend optimized for NVIDIA GPUs
+        rank=rank,
+        world_size=world_size,
+    )
+    torch.cuda.set_device(rank)
+
+
+def cleanup():
+    dist.destroy_process_group()
+
+
 if __name__ == "__main__":
-    train()
+    # If CUDA is available, use it.
+    world_size = torch.cuda.device_count()
+    if world_size > 0:
+        mp.spawn(
+            train,
+            args=(world_size,),  # 10 epochs, for example
+            nprocs=world_size,
+            join=True,
+        )
+    else:
+        train(0)
+
