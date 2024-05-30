@@ -29,13 +29,6 @@ class Encoder(torch.nn.Module):
         # Use only the features part and remove the classifier
         self.features = vgg16_model.features
 
-        # Set to evaluation mode if not fine-tuning
-        if not pretrained:
-            self.features.eval()
-
-        #Obtain the number of features from vvg16
-        num_features = vgg16_model.classifier[0].in_features
-
         # Convolutional layer with kernel size 1x1
         self.conv1x1 = nn.Conv2d(512, 300, kernel_size=1)
 
