@@ -8,6 +8,7 @@ import torch.multiprocessing as mp
 import torch.optim as optim
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torchvision import models
 
 project_path = os.environ.get("PROJECT_PATH")
@@ -27,10 +28,10 @@ def get_classifier(architecture, dim_z, dim_y):
         classifier = nn.Sequential(
             nn.Linear(dim_z, 4096),
             nn.ReLU(inplace=True),
-            nn.Dropout(),
+            nn.Dropout(p=0.3),
             nn.Linear(4096, 4096),
             nn.ReLU(inplace=True),
-            nn.Dropout(),
+            nn.Dropout(p=0.3),
             nn.Linear(4096, dim_y),
             nn.Sigmoid(),
         )
@@ -156,7 +157,7 @@ def get_model(model):
 def train(
     rank,
     world_size,
-    learning_rate=5e-4,
+    learning_rate=1e-4,
     data_size="all",
     data_augmentation=False,
     batch_size=64,
@@ -184,16 +185,20 @@ def train(
         dfs_names,
         data_path,
         batch_size=batch_size,
-        num_workers=2,
+        num_workers=4,
         data_augmentation=data_augmentation,
         rank=rank,
         world_size=world_size,
         use_multi_gpu=use_multi_gpu,
     )
 
-    model = GenClassifier(Architectures.VGG).to(device)
+    # load the model from the checkpoint
+    model = GenClassifier(Architectures.VGG)
+    model.to(device)
 
-    # model = get_model(model)
+    if world_size > 1:
+        model = DDP(model, device_ids=[rank])
+        model_ = get_model(model)
 
     # Define the optimizer
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
@@ -217,7 +222,7 @@ def train(
 
             y_hat = model(images)
 
-            loss = model.loss(y_hat, targets)
+            loss = model_.loss(y_hat, targets)
 
             optimizer.zero_grad()
             loss.backward()
