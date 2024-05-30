@@ -1,4 +1,12 @@
 """
+Date: 2024-05-30
+Current Authors: Juan Pablo Triana Martinez, Abhishek Kumar
+
+Here, we will use a densenet121; BUT we would backpropagate
+as well here; to improve the optimization of the GMVAE.
+"""
+
+"""
 Date: 2024-05-29
 Current Authors: Juan Pablo Triana Martinez, Abhishek Kumar
 
@@ -17,38 +25,43 @@ class Encoder(torch.nn.Module):
         self.y_dim = y_dim
 
         # Load pre-trained VGG16 model
-        vgg16_model = models.vgg16(weights="IMAGENET1K_V1")
+        densenet121 = models.densenet121(weights="IMAGENET1K_V1")
 
         # Use only the features part and remove the classifier
-        self.features = vgg16_model.features
+        self.features = densenet121.features
 
         # Set to evaluation mode if not fine-tuning
         if not pretrained:
             self.features.eval()
 
         # Use only the features part and remove the classifier
-        self.features = vgg16_model.features
+        self.features = densenet121.features
 
-        # Set to evaluation mode if not fine-tuning
-        if not pretrained:
-            self.features.eval()
+        # # Set to evaluation mode if not fine-tuning
+        # if not pretrained:
+        #     self.features.eval()
         
         #Obtain the number of features from vvg16
-        num_features = vgg16_model.classifier[0].in_features
+        num_features = densenet121.classifier.in_features
 
         #Obtain the net
         # z space to sample from
-        self.net = nn.Sequential(
+        self.transition_net = nn.Sequential(
+            # Batch normalization
+            nn.BatchNorm2d(num_features),
+            # Max pooling with kernel size equal to the feature map size
+            nn.AvgPool2d(kernel_size=7),
+            ## Flatten from (Batch_num, 1024, 1, 1) -> (Batch_num, 1024)
+            nn.Flatten(),
             nn.Linear(num_features, 2 * z_dim),
         )
 
     def forward(self, x):
         # Create feature map from vgget16
         feat_map = self.features(x)
-        feat_map = feat_map.view(feat_map.shape[0], -1)
 
         #Now pass it through the net to obtain gaussian space
-        g = self.net(feat_map)
+        g = self.transition_net(feat_map)
 
         #Pass the feature space and get gaussian parameters
         m, v = t.gaussian_parameters(g, dim=1)
