@@ -23,9 +23,9 @@ class Encoder(torch.nn.Module):
         # Use only the features part and remove the classifier
         self.features = vgg16_model.features
 
-        # Set to evaluation mode if not fine-tuning
-        # if not pretrained:
-        #     self.features.eval()
+        #Set to evaluation mode if not fine-tuning
+        if not pretrained:
+            self.features.eval()
 
         #Obtain the net
         # z space to sample from

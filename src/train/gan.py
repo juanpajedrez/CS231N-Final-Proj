@@ -52,7 +52,7 @@ class Discriminator(nn.Module):
 
             # state size. 32 x 64 x 64 -> 64 x 32 x 32
             nn.Conv2d(32, 64, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(32),
+            nn.BatchNorm2d(64),
             nn.LeakyReLU(0.2, inplace=True),
 
             # state size. 64 x 32 x 32 -> 128 x 16 x 16
@@ -132,7 +132,7 @@ def train(
     dim_z=1024,
 ):
     summary_writer = SummaryWriter(
-        f"runs/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-toy-vae-10-epochs"
+        f"runs/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-gan_2-10-epochs"
     )
 
     if world_size > 1:
@@ -179,7 +179,7 @@ def train(
         generator = DDP(generator, device_ids=[rank])
 
     D_solver = get_optimizer(discriminator, lr=2e-4)
-    G_solver = get_optimizer(generator, lr=5e-4)
+    G_solver = get_optimizer(generator, lr=2e-4)
 
     for epoch in range(num_epochs):
 
@@ -222,7 +222,7 @@ def train(
                 summary_writer.add_scalar("discriminator_loss", d_total_error.item(), epoch * len(train_loader) + i)
                 summary_writer.add_scalar("generator_loss", g_error.item(), epoch * len(train_loader) + i)
 
-            if rank == 0 and i % 50 == 0:
+            if rank == 0 and i % 150 == 0:
                 # put generator in evaluation mode
                 generator = generator.eval()
                 with torch.no_grad():
@@ -231,7 +231,7 @@ def train(
                     output = generator(g_fake_seed)
                     vutils.save_image(
                         output.data,
-                        f"output/fake_samples_epoch_{epoch}_{i}.png",
+                        f"output/gan_2/fake_samples_epoch_{epoch}_{i}.png",
                         normalize=True,
                     )
 
@@ -240,9 +240,9 @@ def train(
 
         # save the model
         if rank == 0:
-            torch.save(generator.state_dict(), f"model/gan/bn_generator-{epoch}.pt")
+            torch.save(generator.state_dict(), f"model/gan/bn_2_generator-{epoch}.pt")
             torch.save(
-                discriminator.state_dict(), f"model/gan/bn_discriminator-{epoch}.pt"
+                discriminator.state_dict(), f"model/gan/bn_2_discriminator-{epoch}.pt"
             )
 
     if world_size > 1:
