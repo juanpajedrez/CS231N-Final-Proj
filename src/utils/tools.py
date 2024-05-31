@@ -94,10 +94,7 @@ def get_transforms(augmentaiton=False):
                     lambda crops: torch.stack(
                         [transforms.ToTensor()(crop) for crop in crops]
                     )
-                ),
-                transforms.Lambda(
-                    lambda crops: torch.stack([normalize(crop) for crop in crops])
-                ),
+                )
             ]
         )
     else:
@@ -105,8 +102,7 @@ def get_transforms(augmentaiton=False):
             [
                 transforms.Resize(256),
                 transforms.CenterCrop((224, 224)),  # Center crop to 224x224
-                transforms.ToTensor(),
-                normalize,
+                transforms.ToTensor()
             ]
         )
     return transform
