@@ -9,13 +9,13 @@ training:
   optimizer: "adam"
   num_workers: 0
 model: # Any model parameters
-  z: 2000
+  z: 5000
   k : 300
-  iter_max : 1000
-  iter_save : 250
+  iter_max : 1500
+  iter_save : 500
   run: 0
   train: 1
   overwrite: 0
   loss: "mse" 
-  nn_type: "GMVAE_CXR14_V6"
+  nn_type: "GMVAE_CXR14_V8"
   num_classes : 14

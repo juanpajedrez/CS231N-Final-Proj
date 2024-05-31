@@ -35,6 +35,7 @@ def get_data_loaders(
     rank=0,
     world_size=1,
     use_multi_gpu=False,
+    image_size=224
 ):
     
     datasets = [
@@ -48,17 +49,17 @@ def get_data_loaders(
     train_dataset = CXReader(
         data_path=data_path,
         dataframe=dfs_holder[dfs_names.index("train.csv")],
-        transform=get_transforms(data_augmentation),
+        transform=get_transforms(data_augmentation, image_size=image_size),
     )
     test_dataset = CXReader(
         data_path=data_path,
         dataframe=dfs_holder[dfs_names.index("test.csv")],
-        transform=get_transforms(False),
+        transform=get_transforms(False, image_size=image_size),
     )
     val_dataset = CXReader(
         data_path=data_path,
         dataframe=dfs_holder[dfs_names.index("val.csv")],
-        transform=get_transforms(False),
+        transform=get_transforms(False, image_size=image_size),
     )
 
     # ToDo: In case of all classes, lets try to use weighted random sampler
@@ -127,7 +128,7 @@ def create_data_loader(
         )
 
 
-def get_transforms(augmentaiton=False, image_size=64):
+def get_transforms(augmentaiton=False, image_size=224):
     normalize = transforms.Normalize((0.5,), (0.5,)) # normalise between [-1, 1]
     if augmentaiton:
         transform = transforms.Compose(

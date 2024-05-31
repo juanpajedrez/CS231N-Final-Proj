@@ -35,6 +35,14 @@
             "program": "src/train/vae.py",
             "console": "integratedTerminal",
             "args": [],
+        },
+        {
+            "name": "test_gan",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "src/train/gan.py",
+            "console": "integratedTerminal",
+            "args": [],
         }
     ]
 }

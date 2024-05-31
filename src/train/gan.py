@@ -1,14 +1,16 @@
+import datetime
 import os
 import sys
 
-from dotenv import load_dotenv
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
-
 import torch.nn as nn
 import torch.optim as optim
+import torchvision.utils as vutils
+from dotenv import load_dotenv
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.tensorboard import SummaryWriter
 
 load_dotenv()
 
@@ -18,9 +20,7 @@ data_path = os.environ.get("DATA_PATH")
 # Feels hacky. Figure out a better way.
 sys.path.append(os.path.join(project_path, "src"))
 
-from train.constants import Architectures
-from train.helpers import compute_auc, get_data_loaders, get_dataframes, p_print
-from train.vae import get_encoder
+from train.helpers import get_data_loaders, get_dataframes, p_print
 
 
 def get_optimizer(model, lr):
@@ -46,42 +46,33 @@ class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
         self.main = nn.Sequential(
-            # input is 1 x 64 x 64 -> 64 x 32 x 32
-            nn.Conv2d(1, 64, 4, 2, 1, bias=False),
+            # input is 1 x 128 x 128 -> 32 x 64 x 64
+            nn.Conv2d(1, 32, 4, 2, 1, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
-            
+
+            # state size. 32 x 64 x 64 -> 64 x 32 x 32
+            nn.Conv2d(32, 64, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(32),
+            nn.LeakyReLU(0.2, inplace=True),
+
             # state size. 64 x 32 x 32 -> 128 x 16 x 16
             nn.Conv2d(64, 128, 4, 2, 1, bias=False),
             nn.BatchNorm2d(128),
             nn.LeakyReLU(0.2, inplace=True),
-            
+
             # state size. 128 x 16 x 16 -> 256 x 8 x 8
             nn.Conv2d(128, 256, 4, 2, 1, bias=False),
             nn.BatchNorm2d(256),
             nn.LeakyReLU(0.2, inplace=True),
-            
+
             # state size. 256 x 8 x 8 -> 512 x 4 x 4
             nn.Conv2d(256, 512, 4, 2, 1, bias=False),
             nn.BatchNorm2d(512),
             nn.LeakyReLU(0.2, inplace=True),
             
-            # flatten and add a linear layer
-            nn.Conv2d(512, 1, 4, 1, 0, bias=False)
+            # classifier layer
+            nn.Conv2d(512, 1, 4, 1, 0, bias=False),
         )
-
-        # self.main = nn.Sequential(
-        #     nn.Conv2d(1, 64, 4, 2, 1, bias=False),
-        #     nn.LeakyReLU(0.2),
-        #     nn.Conv2d(64, 128, 4, 2, 1, bias=False),
-        #     nn.LeakyReLU(0.2),
-        #     nn.Conv2d(128, 256, 4, 2, 1, bias=False),
-        #     nn.LeakyReLU(0.2),
-        #     nn.Conv2d(256, 512, 4, 2, 1, bias=False),
-        #     nn.LeakyReLU(0.2),
-        #     nn.Flatten(),
-        #     nn.Linear(512 * 4 * 4, 1),
-        #     nn.Sigmoid()
-        # )
 
     def forward(self, input):
         out = self.main(input)
@@ -93,41 +84,36 @@ class Generator(nn.Module):
         super(Generator, self).__init__()
         self.main = nn.Sequential(
             # input is Z, going into a convolution
+            # dim_z x 1 x 1 -> 512 x 4 x 4
             nn.ConvTranspose2d(dim_z, 512, 4, 1, 0, bias=False),
             nn.BatchNorm2d(512),
             nn.ReLU(True),
-            # state size. 512 x 4 x 4
+
+            # state size. 512 x 4 x 4 -> 256 x 8 x 8
             nn.ConvTranspose2d(512, 256, 4, 2, 1, bias=False),
             nn.BatchNorm2d(256),
             nn.ReLU(True),
-            # state size. 256 x 8 x 8
+
+            # state size. 256 x 8 x 8 -> 128 x 16 x 16
             nn.ConvTranspose2d(256, 128, 4, 2, 1, bias=False),
             nn.BatchNorm2d(128),
             nn.ReLU(True),
-            # state size. 128 x 16 x 16
+
+            # state size. 128 x 16 x 16 -> 64 x 32 x 32
             nn.ConvTranspose2d(128, 64, 4, 2, 1, bias=False),
             nn.BatchNorm2d(64),
             nn.ReLU(True),
-            # state size. 64 x 32 x 32
-            nn.ConvTranspose2d(64, 1, 4, 2, 1, bias=False),
-            
-            nn.Tanh(),
-            # state size. 1 x 64 x 64
-        )
 
-        # self.main = nn.Sequential(
-        #     nn.ConvTranspose2d(dim_z, 512, 4, 1, 0, bias=False),
-        #     nn.BatchNorm2d(512),
-        #     nn.ReLU(),
-        #     nn.ConvTranspose2d(512, 256, 4, 2, 1, bias=False),
-        #     nn.ReLU(),
-        #     nn.ConvTranspose2d(256, 128, 4, 2, 1, bias=False),
-        #     nn.ReLU(),
-        #     nn.ConvTranspose2d(128, 64, 4, 2, 1, bias=False),
-        #     nn.ReLU(),
-        #     nn.ConvTranspose2d(64, 1, 4, 2, 1, bias=False),
-        #     nn.Tanh(),
-        # )
+            # state size. 64 x 32 x 32 -> 32 x 64 x 64
+            nn.ConvTranspose2d(64, 32, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(32),
+            nn.ReLU(True),
+
+            # state size. 32 x 64 x 64 -> 1 x 128 x 128
+            nn.ConvTranspose2d(32, 1, 4, 2, 1, bias=False),
+            nn.Tanh(),
+            # state size. 1 x 128 x 128
+        )
 
     def forward(self, input):
         return self.main(input)
@@ -145,7 +131,9 @@ def train(
     num_epochs=10,
     dim_z=1024,
 ):
-    # summary_writer = SummaryWriter(f"runs/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-toy-vae-10-epochs")
+    summary_writer = SummaryWriter(
+        f"runs/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-toy-vae-10-epochs"
+    )
 
     if world_size > 1:
         setup(rank, world_size)
@@ -160,7 +148,7 @@ def train(
     print("Using device", device)
 
     dfs_holder, dfs_names = get_dataframes(
-        os.path.join(project_path, "meta"), diseases="all", data=data_size
+        os.path.join(project_path, "meta"), diseases=["No Finding"], data=data_size
     )
 
     train_loader, test_loader, val_loader = get_data_loaders(
@@ -173,32 +161,34 @@ def train(
         rank=rank,
         world_size=world_size,
         use_multi_gpu=use_multi_gpu,
+        image_size=128
     )
 
     discriminator = Discriminator()
-    discriminator = nn.SyncBatchNorm.convert_sync_batchnorm(discriminator)
+    if world_size > 1:
+        discriminator = nn.SyncBatchNorm.convert_sync_batchnorm(discriminator)
     discriminator = discriminator.to(device)
 
-    generator = Generator(dim_z=dim_z).to(device)
+    generator = Generator(dim_z=dim_z)
+    if world_size > 1:
+        generator = nn.SyncBatchNorm.convert_sync_batchnorm(generator)
+    generator = generator.to(device)
 
     if world_size > 1:
         discriminator = DDP(discriminator, device_ids=[rank])
         generator = DDP(generator, device_ids=[rank])
 
     D_solver = get_optimizer(discriminator, lr=2e-4)
-    G_solver = get_optimizer(generator, lr=2e-4)
-
-    torch.autograd.set_detect_anomaly(True)
+    G_solver = get_optimizer(generator, lr=5e-4)
 
     for epoch in range(num_epochs):
+
+        generator = generator.train()
+        discriminator = discriminator.train()
 
         for i, (images, _) in enumerate(train_loader):
             images = images.to(device)
             images = images.type(dtype)
-
-            # ensure the values are between -1 and 1
-            assert images.min() >= -1.0
-            assert images.max() <= 1.0
 
             D_solver.zero_grad()
             logits_real = discriminator(images)
@@ -229,6 +219,24 @@ def train(
                         epoch, i, d_total_error.item(), g_error.item()
                     )
                 )
+                summary_writer.add_scalar("discriminator_loss", d_total_error.item(), epoch * len(train_loader) + i)
+                summary_writer.add_scalar("generator_loss", g_error.item(), epoch * len(train_loader) + i)
+
+            if rank == 0 and i % 50 == 0:
+                # put generator in evaluation mode
+                generator = generator.eval()
+                with torch.no_grad():
+                    g_fake_seed = sample_noise(1, dim_z).to(device)
+                    g_fake_seed = g_fake_seed.view(1, dim_z, 1, 1)
+                    output = generator(g_fake_seed)
+                    vutils.save_image(
+                        output.data,
+                        f"output/fake_samples_epoch_{epoch}_{i}.png",
+                        normalize=True,
+                    )
+
+                # put generator back in training mode
+                generator = generator.train()
 
         # save the model
         if rank == 0:

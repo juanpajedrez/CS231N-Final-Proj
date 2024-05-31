@@ -30,3 +30,4 @@ notebooks/wandb/
 
 # tensorboard
 runs/
+output/
