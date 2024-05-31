@@ -132,8 +132,8 @@ def get_transforms(augmentaiton=False, image_size=64):
     if augmentaiton:
         transform = transforms.Compose(
             [
-                transforms.Resize(256),
-                transforms.TenCrop(224),
+                transforms.Resize(image_size),
+                transforms.TenCrop(image_size),
                 transforms.Lambda(
                     lambda crops: torch.stack(
                         [transforms.ToTensor()(crop) for crop in crops]
