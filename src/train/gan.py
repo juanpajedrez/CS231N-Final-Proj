@@ -129,10 +129,10 @@ def train(
     data_augmentation=False,
     batch_size=64,
     num_epochs=10,
-    dim_z=1024,
+    dim_z=2048,
 ):
     summary_writer = SummaryWriter(
-        f"runs/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-gan_2-10-epochs"
+        f"runs/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-gan_4-10-epochs"
     )
 
     if world_size > 1:
@@ -164,24 +164,28 @@ def train(
         image_size=128
     )
 
+    load_checkpoint = 6
+
     discriminator = Discriminator()
     if world_size > 1:
         discriminator = nn.SyncBatchNorm.convert_sync_batchnorm(discriminator)
     discriminator = discriminator.to(device)
+    discriminator.load_state_dict(torch.load(f"model/gan/bn_2_discriminator-{load_checkpoint}.pt"))
 
     generator = Generator(dim_z=dim_z)
     if world_size > 1:
         generator = nn.SyncBatchNorm.convert_sync_batchnorm(generator)
     generator = generator.to(device)
+    generator.load_state_dict(torch.load(f"model/gan/bn_2_generator-{load_checkpoint}.pt"))
 
     if world_size > 1:
         discriminator = DDP(discriminator, device_ids=[rank])
         generator = DDP(generator, device_ids=[rank])
 
-    D_solver = get_optimizer(discriminator, lr=2e-4)
-    G_solver = get_optimizer(generator, lr=2e-4)
+    D_solver = get_optimizer(discriminator, lr=1e-4)
+    G_solver = get_optimizer(generator, lr=6e-4)
 
-    for epoch in range(num_epochs):
+    for epoch in range(load_checkpoint + 1, num_epochs):
 
         generator = generator.train()
         discriminator = discriminator.train()
@@ -204,14 +208,16 @@ def train(
             d_total_error.backward()
             D_solver.step()
 
-            G_solver.zero_grad()
-            g_fake_seed = sample_noise(batch_size, dim_z).to(device)
-            g_fake_seed = g_fake_seed.view(batch_size, dim_z, 1, 1)
-            gen_fake_images = generator(g_fake_seed)
-            gen_logits_fake = discriminator(gen_fake_images)
-            g_error = ls_generator_loss(gen_logits_fake)
-            g_error.backward()
-            G_solver.step()
+            # run generator for a few steps
+            for _ in range(1):
+                G_solver.zero_grad()
+                g_fake_seed = sample_noise(batch_size, dim_z).to(device)
+                g_fake_seed = g_fake_seed.view(batch_size, dim_z, 1, 1)
+                gen_fake_images = generator(g_fake_seed)
+                gen_logits_fake = discriminator(gen_fake_images)
+                g_error = ls_generator_loss(gen_logits_fake)
+                g_error.backward()
+                G_solver.step()
 
             if rank == 0 and i % 10 == 0:
                 p_print(
@@ -222,7 +228,7 @@ def train(
                 summary_writer.add_scalar("discriminator_loss", d_total_error.item(), epoch * len(train_loader) + i)
                 summary_writer.add_scalar("generator_loss", g_error.item(), epoch * len(train_loader) + i)
 
-            if rank == 0 and i % 150 == 0:
+            if rank == 0 and i % 100 == 0:
                 # put generator in evaluation mode
                 generator = generator.eval()
                 with torch.no_grad():
@@ -231,7 +237,7 @@ def train(
                     output = generator(g_fake_seed)
                     vutils.save_image(
                         output.data,
-                        f"output/gan_2/fake_samples_epoch_{epoch}_{i}.png",
+                        f"output/gan_4/fake_samples_epoch_{epoch}_{i}.png",
                         normalize=True,
                     )
 
