@@ -164,7 +164,7 @@ def train(
         image_size=128
     )
 
-    load_checkpoint = 6
+    load_checkpoint = 2
 
     discriminator = Discriminator()
     if world_size > 1:
@@ -183,7 +183,7 @@ def train(
         generator = DDP(generator, device_ids=[rank])
 
     D_solver = get_optimizer(discriminator, lr=1e-4)
-    G_solver = get_optimizer(generator, lr=6e-4)
+    G_solver = get_optimizer(generator, lr=3e-4)
 
     for epoch in range(load_checkpoint + 1, num_epochs):
 
@@ -209,7 +209,7 @@ def train(
             D_solver.step()
 
             # run generator for a few steps
-            for _ in range(1):
+            for _ in range(3):
                 G_solver.zero_grad()
                 g_fake_seed = sample_noise(batch_size, dim_z).to(device)
                 g_fake_seed = g_fake_seed.view(batch_size, dim_z, 1, 1)
