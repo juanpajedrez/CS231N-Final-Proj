@@ -95,7 +95,7 @@ def get_decoder(dim_z):
 
 class VAE(nn.Module):
 
-    def __init__(self, dim_z=1000, dim_y=0, beta=1) -> None:
+    def __init__(self, dim_z=1024, dim_y=0, beta=2e-3) -> None:
         super(VAE, self).__init__()
 
         self.encoder_module = get_encoder()
@@ -143,8 +143,8 @@ class VAE(nn.Module):
         kl_divergence = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         return reconstruction_loss + self.beta * kl_divergence
 
-    def sample(self, num_samples=1):
-        z = torch.randn(num_samples, self.dim_z)
+    def sample(self, device, num_samples=1):
+        z = torch.randn(num_samples, self.dim_z).to(device)
         self.decoder_module.eval()
         with torch.no_grad():
             s = self.decode(z)
@@ -185,13 +185,21 @@ def train(
     rank,
     world_size,
     args,
-    learning_rate=5e-4,
+    learning_rate=1e-4,
     data_size="all",
     data_augmentation=False,
     batch_size=64,
 ):
+    model_name = "vae-beta_2e-3"
+    sample_image_output_dir = "output/vae"
+    model_checkpoint_dir = "model/vae"
+    if not os.path.exists(sample_image_output_dir):
+        os.makedirs(sample_image_output_dir)
+    if not os.path.exists(model_checkpoint_dir):
+        os.makedirs(model_checkpoint_dir)
+        
     if rank == 0:
-        summary_writer = SummaryWriter(f"runs/final-vae-10-epochs")
+        summary_writer = SummaryWriter(f"runs/{model_name}-10-epochs")
 
     if world_size > 1:
         setup(rank, world_size)
@@ -219,14 +227,6 @@ def train(
         use_multi_gpu=use_multi_gpu,
         image_size=128,
     )
-
-    model_name = f"final-vae-1"
-    sample_image_output_dir = "output/vae"
-    model_checkpoint_dir = "model/vae"
-    if not os.path.exists(sample_image_output_dir):
-        os.makedirs(sample_image_output_dir)
-    if not os.path.exists(model_checkpoint_dir):
-        os.makedirs(model_checkpoint_dir)
 
     model = VAE().to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -261,7 +261,7 @@ def train(
 
             if i % 50 == 0:
                 # sample an image and save it
-                s = model_module.sample(1)
+                s = model_module.sample(device, 1)
                 s = s.view(-1, 1, 128, 128)
                 vutils.save_image(
                     s.data,
@@ -273,7 +273,7 @@ def train(
             val_loss = evaluate(model, val_loader)
             save_model(model, optimizer, f"{model_checkpoint_dir}/{model_name}-{epoch}.pt")
             p_print(f"Epoch: {epoch}, Val_Loss: {val_loss}")
-            summary_writer.add_scalar("loss", loss.item(), epoch)
+            summary_writer.add_scalar("val loss", loss.item(), epoch)
 
 def setup(rank, world_size):
     os.environ["MASTER_ADDR"] = "localhost"

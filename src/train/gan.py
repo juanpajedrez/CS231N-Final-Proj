@@ -131,9 +131,18 @@ def train(
     num_epochs=10,
     dim_z=1024,
 ):
-    summary_writer = SummaryWriter(
-        f"runs/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-gan_2-10-epochs"
-    )
+    model_name = "gan_dim_z-1024"
+    sample_image_output_dir = "output/gan"
+    model_checkpoint_dir = "model/gan"
+    if not os.path.exists(sample_image_output_dir):
+        os.makedirs(sample_image_output_dir)
+    if not os.path.exists(model_checkpoint_dir):
+        os.makedirs(model_checkpoint_dir)
+    
+    if rank == 0:
+        summary_writer = SummaryWriter(
+            f"runs/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-gan_2-10-epochs"
+        )
 
     if world_size > 1:
         setup(rank, world_size)
