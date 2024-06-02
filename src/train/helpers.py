@@ -298,3 +298,27 @@ def p_print(*args):
             file=f,
             flush=True,
         )
+
+
+def save_model(model, optimizer, filepath):
+    save_info = {
+        "model": model.state_dict(),
+        "optim": optimizer.state_dict(),
+        "system_rng": random.getstate(),
+        "numpy_rng": np.random.get_state(),
+        "torch_rng": torch.random.get_rng_state(),
+    }
+
+    torch.save(save_info, filepath)
+    p_print(f"save the model to {filepath}")
+
+def load_model(model, optimizer, filepath):
+    checkpoint = torch.load(filepath)
+    model.load_state_dict(checkpoint["model"])
+    optimizer.load_state_dict(checkpoint["optim"])
+    random.setstate(checkpoint["system_rng"])
+    np.random.set_state(checkpoint["numpy_rng"])
+    torch.random.set_rng_state(checkpoint["torch_rng"])
+    p_print(f"loaded the model from {filepath}")
+    return model, optimizer
+    

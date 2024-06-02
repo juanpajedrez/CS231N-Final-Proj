@@ -1,3 +1,4 @@
+import argparse
 import datetime
 import os
 import sys
@@ -5,11 +6,14 @@ import sys
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
-from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.optim as optim
+from dotenv import load_dotenv
 from torch import nn
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import models
+
+load_dotenv()
 
 project_path = os.environ.get("PROJECT_PATH")
 data_path = os.environ.get("DATA_PATH")
@@ -17,7 +21,7 @@ data_path = os.environ.get("DATA_PATH")
 # Feels hacky. Figure out a better way.
 sys.path.append(os.path.join(project_path, "src"))
 
-from train.helpers import get_data_loaders, get_dataframes, p_print
+from train.helpers import get_data_loaders, get_dataframes, load_model, p_print, save_model
 
 
 def get_encoder():
@@ -29,39 +33,35 @@ def get_encoder():
         nn.Conv2d(32, 32, 3, 1, 1),
         nn.LeakyReLU(0.2, inplace=True),
         nn.MaxPool2d(2, 2, 0),
-
         # 32 x 64 x 64 -> 64 x 32 x 32
         nn.Conv2d(32, 64, 3, 1, 1),
         nn.LeakyReLU(0.2, inplace=True),
         nn.Conv2d(64, 64, 3, 1, 1),
         nn.LeakyReLU(0.2, inplace=True),
         nn.MaxPool2d(2, 2, 0),
-
         # 64 x 32 x 32 -> 128 x 16 x 16
         nn.Conv2d(64, 128, 3, 1, 1),
         nn.LeakyReLU(0.2, inplace=True),
         nn.Conv2d(128, 128, 3, 1, 1),
         nn.LeakyReLU(0.2, inplace=True),
         nn.MaxPool2d(2, 2, 0),
-
         # 128 * 16 * 16 -> 256 x 8 x 8
         nn.Conv2d(128, 256, 3, 1, 1),
         nn.LeakyReLU(0.2, inplace=True),
         nn.Conv2d(256, 256, 3, 1, 1),
         nn.LeakyReLU(0.2, inplace=True),
         nn.MaxPool2d(2, 2, 0),
-
         # 256 x 8 x 8 -> 512 x 4 x 4
         nn.Conv2d(256, 512, 3, 1, 1),
         nn.LeakyReLU(0.2, inplace=True),
         nn.Conv2d(512, 512, 3, 1, 1),
         nn.LeakyReLU(0.2, inplace=True),
         nn.MaxPool2d(2, 2, 0),
-
         # 512 x 4 x 4 -> 8192
         nn.Flatten(),
     )
     return encoder
+
 
 def get_decoder(dim_z):
     # num_params: 10,987,457
@@ -69,29 +69,24 @@ def get_decoder(dim_z):
     decoder = nn.Sequential(
         nn.Linear(dim_z, 512 * 4 * 4),
         nn.Unflatten(1, (512, 4, 4)),
-        
         # 512 * 4 * 4 -> 256 * 8 * 8
         nn.ConvTranspose2d(512, 256, kernel_size=4, stride=2, padding=1),
         nn.BatchNorm2d(256),
         nn.ReLU(inplace=True),
-        
         # 256 * 8 * 8 -> 128 * 16 * 16
         nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),
         nn.BatchNorm2d(128),
         nn.ReLU(inplace=True),
-
         # 128 * 16 * 16 -> 64 * 32 * 32
         nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),
         nn.BatchNorm2d(64),
         nn.ReLU(inplace=True),
-
         # 64 * 32 * 32 -> 32 * 64 * 64
         nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1),
         nn.BatchNorm2d(32),
         nn.ReLU(inplace=True),
-
         # 32 * 64 * 64 -> 1 * 128 * 128
-        nn.ConvTranspose2d(32, 1, kernel_size=4, stride=2, padding=1)
+        nn.ConvTranspose2d(32, 1, kernel_size=4, stride=2, padding=1),
     )
     return decoder
 
@@ -103,11 +98,15 @@ class VAE(nn.Module):
 
         self.encoder_module = get_encoder()
         self.dim_z = dim_z
-        
+
         features_out_dim = 8192
 
-        self.mu = nn.Sequential(nn.Linear(features_out_dim, dim_z), nn.LeakyReLU(0.2, inplace=True))
-        self.logvar = nn.Sequential(nn.Linear(features_out_dim, dim_z), nn.LeakyReLU(0.2, inplace=True))
+        self.mu = nn.Sequential(
+            nn.Linear(features_out_dim, dim_z), nn.LeakyReLU(0.2, inplace=True)
+        )
+        self.logvar = nn.Sequential(
+            nn.Linear(features_out_dim, dim_z), nn.LeakyReLU(0.2, inplace=True)
+        )
 
         self.decoder_module = get_decoder(self.dim_z)
 
@@ -180,12 +179,14 @@ def get_model(model):
 def train(
     rank,
     world_size,
-    learning_rate=1e-4,
+    args,
+    learning_rate=5e-4,
     data_size="all",
     data_augmentation=False,
     batch_size=64,
 ):
-    summary_writer = SummaryWriter(f"runs/final-vae-10-epochs")
+    if rank == 0:
+        summary_writer = SummaryWriter(f"runs/final-vae-10-epochs")
 
     if world_size > 1:
         setup(rank, world_size)
@@ -214,19 +215,21 @@ def train(
         image_size=128,
     )
 
-    model = VAE().to(device)
+    model_name = f"model/vae/final-vae"
 
+    model = VAE().to(device)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    
     if world_size > 1:
         model = DDP(model, device_ids=[rank])
+    
+    if args.load_checkpoint:
+        load_model(model, optimizer, f"model/vae/final-vae-{args.checkpoint}.pt")
 
-    # Define the optimizer
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-
-    model_name = f"models/vae/final-vae"
+    model_module = get_model(model)
 
     # Training loop
     num_epochs = 10
-    best_val_loss = 1e5
 
     for epoch in range(num_epochs):
         model.train()
@@ -235,7 +238,7 @@ def train(
 
             optimizer.zero_grad()
             x_hat, mu, logvar = model(images)
-            loss = model.loss(images, x_hat, mu, logvar)
+            loss = model_module.loss(images, x_hat, mu, logvar)
             loss.backward()
             optimizer.step()
 
@@ -247,12 +250,7 @@ def train(
 
         if rank == 0:
             val_loss = evaluate(model, val_loader)
-
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                torch.save(model.state_dict(), model_name)
-                print("saved model")
-
+            save_model(model, optimizer, f"{model_name}-{epoch}.pt")
             p_print(f"Epoch: {epoch}, Val_Loss: {val_loss}")
             summary_writer.add_scalar("loss", loss.item(), epoch)
 
@@ -273,14 +271,20 @@ def cleanup():
 
 
 if __name__ == "__main__":
+    # Get args
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--load_checkpoint", action="store_true")
+    parser.add_argument("--checkpoint", type=int, default=0)
+    args = parser.parse_args()
+
     # If CUDA is available, use it.
     world_size = torch.cuda.device_count()
     if world_size > 0:
         mp.spawn(
             train,
-            args=(world_size,),  # 10 epochs, for example
+            args=(world_size, args),  # 10 epochs, for example
             nprocs=world_size,
             join=True,
         )
     else:
-        train(0, 1)
+        train(0, 1, args)
