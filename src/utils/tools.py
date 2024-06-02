@@ -19,6 +19,7 @@ import torch
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, RandomSampler
 from torchvision import transforms
+from PIL import Image, ImageOps
 
 # Import the ncessary modules
 from .df_reader import DfReader
@@ -83,26 +84,45 @@ def get_data_loaders(
     return train_loader, test_loader, val_loader
 
 
-def get_transforms(augmentaiton=False):
-    normalize = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+class HistogramEqualization:
+    def __call__(self, img):
+        if img.mode == "RGB":
+            r, g, b = img.split()
+            h = ImageOps.equalize(r)
+            e = ImageOps.equalize(g)
+            i = ImageOps.equalize(b)
+            img = Image.merge("RGB", (h, e, i))
+        else:
+            img = ImageOps.equalize(img)
+        return img
+
+def get_transforms(augmentaiton=False, image_size:int = 224):
+    #normalize = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    normalize = transforms.Normalize((0.5,), (0.5,))  # normalise between [-1, 1]
     if augmentaiton:
         transform = transforms.Compose(
             [
                 transforms.Resize(256),
-                transforms.TenCrop(224),
+                transforms.TenCrop(image_size),
+                transforms.Grayscale(num_output_channels=1),
                 transforms.Lambda(
                     lambda crops: torch.stack(
                         [transforms.ToTensor()(crop) for crop in crops]
                     )
-                )
+                ),
+                transforms.Lambda(
+                    lambda crops: torch.stack([normalize(crop) for crop in crops])
+                ),
             ]
         )
     else:
         transform = transforms.Compose(
             [
                 transforms.Resize(256),
-                transforms.CenterCrop((224, 224)),  # Center crop to 224x224
-                transforms.ToTensor()
+                transforms.CenterCrop(image_size),
+                transforms.Grayscale(num_output_channels=1),
+                HistogramEqualization(),
+                transforms.ToTensor(),
             ]
         )
     return transform
