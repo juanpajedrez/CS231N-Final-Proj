@@ -22,8 +22,13 @@ data_path = os.environ.get("DATA_PATH")
 # Feels hacky. Figure out a better way.
 sys.path.append(os.path.join(project_path, "src"))
 
-from train.helpers import (get_data_loaders, get_dataframes, load_model,
-                           p_print, save_model)
+from train.helpers import (
+    get_data_loaders,
+    get_dataframes,
+    load_model,
+    p_print,
+    save_model,
+)
 
 
 def get_encoder():
@@ -197,7 +202,7 @@ def train(
         os.makedirs(sample_image_output_dir)
     if not os.path.exists(model_checkpoint_dir):
         os.makedirs(model_checkpoint_dir)
-        
+
     if rank == 0:
         summary_writer = SummaryWriter(f"runs/{model_name}-10-epochs")
 
@@ -230,19 +235,23 @@ def train(
 
     model = VAE().to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    
+
     if world_size > 1:
         model = DDP(model, device_ids=[rank])
-    
+
     if args.load_checkpoint:
-        load_model(model, optimizer, f"{model_checkpoint_dir}/{model_name}-{args.checkpoint}.pt")
+        load_model(
+            model,
+            optimizer,
+            f"{model_checkpoint_dir}/{model_name}-{args.checkpoint}.pt",
+        )
 
     model_module = get_model(model)
 
     # Training loop
     num_epochs = 10
 
-    for epoch in range(num_epochs):
+    for epoch in range(args.checkpoint + 1, num_epochs):
         model.train()
         for i, (images, _) in enumerate(train_loader):
             images = images.to(device)
@@ -259,7 +268,7 @@ def train(
                     "loss", loss.item(), epoch * len(train_loader) + i
                 )
 
-            if i % 50 == 0:
+            if rank == 0 and i % 50 == 0:
                 # sample an image and save it
                 s = model_module.sample(device, 1)
                 s = s.view(-1, 1, 128, 128)
@@ -271,9 +280,15 @@ def train(
 
         if rank == 0:
             val_loss = evaluate(model, val_loader)
-            save_model(model, optimizer, f"{model_checkpoint_dir}/{model_name}-{epoch}.pt")
+            save_model(
+                model, optimizer, f"{model_checkpoint_dir}/{model_name}-{epoch}.pt"
+            )
             p_print(f"Epoch: {epoch}, Val_Loss: {val_loss}")
             summary_writer.add_scalar("val loss", loss.item(), epoch)
+
+    if world_size > 1:
+        cleanup()
+
 
 def setup(rank, world_size):
     os.environ["MASTER_ADDR"] = "localhost"

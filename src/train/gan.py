@@ -1,3 +1,4 @@
+import argparse
 import datetime
 import os
 import sys
@@ -20,7 +21,13 @@ data_path = os.environ.get("DATA_PATH")
 # Feels hacky. Figure out a better way.
 sys.path.append(os.path.join(project_path, "src"))
 
-from train.helpers import get_data_loaders, get_dataframes, p_print
+from train.helpers import (
+    get_data_loaders,
+    get_dataframes,
+    load_model,
+    p_print,
+    save_model,
+)
 
 
 def get_optimizer(model, lr):
@@ -49,27 +56,22 @@ class Discriminator(nn.Module):
             # input is 1 x 128 x 128 -> 32 x 64 x 64
             nn.Conv2d(1, 32, 4, 2, 1, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
-
             # state size. 32 x 64 x 64 -> 64 x 32 x 32
             nn.Conv2d(32, 64, 4, 2, 1, bias=False),
             nn.BatchNorm2d(64),
             nn.LeakyReLU(0.2, inplace=True),
-
             # state size. 64 x 32 x 32 -> 128 x 16 x 16
             nn.Conv2d(64, 128, 4, 2, 1, bias=False),
             nn.BatchNorm2d(128),
             nn.LeakyReLU(0.2, inplace=True),
-
             # state size. 128 x 16 x 16 -> 256 x 8 x 8
             nn.Conv2d(128, 256, 4, 2, 1, bias=False),
             nn.BatchNorm2d(256),
             nn.LeakyReLU(0.2, inplace=True),
-
             # state size. 256 x 8 x 8 -> 512 x 4 x 4
             nn.Conv2d(256, 512, 4, 2, 1, bias=False),
             nn.BatchNorm2d(512),
             nn.LeakyReLU(0.2, inplace=True),
-            
             # classifier layer
             nn.Conv2d(512, 1, 4, 1, 0, bias=False),
         )
@@ -88,27 +90,22 @@ class Generator(nn.Module):
             nn.ConvTranspose2d(dim_z, 512, 4, 1, 0, bias=False),
             nn.BatchNorm2d(512),
             nn.ReLU(True),
-
             # state size. 512 x 4 x 4 -> 256 x 8 x 8
             nn.ConvTranspose2d(512, 256, 4, 2, 1, bias=False),
             nn.BatchNorm2d(256),
             nn.ReLU(True),
-
             # state size. 256 x 8 x 8 -> 128 x 16 x 16
             nn.ConvTranspose2d(256, 128, 4, 2, 1, bias=False),
             nn.BatchNorm2d(128),
             nn.ReLU(True),
-
             # state size. 128 x 16 x 16 -> 64 x 32 x 32
             nn.ConvTranspose2d(128, 64, 4, 2, 1, bias=False),
             nn.BatchNorm2d(64),
             nn.ReLU(True),
-
             # state size. 64 x 32 x 32 -> 32 x 64 x 64
             nn.ConvTranspose2d(64, 32, 4, 2, 1, bias=False),
             nn.BatchNorm2d(32),
             nn.ReLU(True),
-
             # state size. 32 x 64 x 64 -> 1 x 128 x 128
             nn.ConvTranspose2d(32, 1, 4, 2, 1, bias=False),
             nn.Tanh(),
@@ -125,11 +122,12 @@ class Generator(nn.Module):
 def train(
     rank,
     world_size,
+    args,
     data_size="all",
     data_augmentation=False,
     batch_size=64,
     num_epochs=10,
-    dim_z=1024,
+    dim_z=2048,
 ):
     model_name = "gan_dim_z-1024"
     sample_image_output_dir = "output/gan"
@@ -138,11 +136,9 @@ def train(
         os.makedirs(sample_image_output_dir)
     if not os.path.exists(model_checkpoint_dir):
         os.makedirs(model_checkpoint_dir)
-    
+
     if rank == 0:
-        summary_writer = SummaryWriter(
-            f"runs/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-gan_2-10-epochs"
-        )
+        summary_writer = SummaryWriter(f"runs/{model_name}-10-epochs")
 
     if world_size > 1:
         setup(rank, world_size)
@@ -170,27 +166,36 @@ def train(
         rank=rank,
         world_size=world_size,
         use_multi_gpu=use_multi_gpu,
-        image_size=128
+        image_size=128,
     )
 
-    discriminator = Discriminator()
+    discriminator = Discriminator().to(device)
     if world_size > 1:
         discriminator = nn.SyncBatchNorm.convert_sync_batchnorm(discriminator)
-    discriminator = discriminator.to(device)
-
-    generator = Generator(dim_z=dim_z)
-    if world_size > 1:
-        generator = nn.SyncBatchNorm.convert_sync_batchnorm(generator)
-    generator = generator.to(device)
-
-    if world_size > 1:
         discriminator = DDP(discriminator, device_ids=[rank])
-        generator = DDP(generator, device_ids=[rank])
 
     D_solver = get_optimizer(discriminator, lr=2e-4)
+
+    generator = Generator(dim_z=dim_z).to(device)
+    if world_size > 1:
+        generator = nn.SyncBatchNorm.convert_sync_batchnorm(generator)
+        generator = DDP(generator, device_ids=[rank])
+
     G_solver = get_optimizer(generator, lr=2e-4)
 
-    for epoch in range(num_epochs):
+    if args.load_checkpoint:
+        load_model(
+            discriminator,
+            D_solver,
+            f"{model_checkpoint_dir}/{model_name}-D-{args.checkpoint}.pt",
+        )
+        load_model(
+            generator,
+            G_solver,
+            f"{model_checkpoint_dir}/{model_name}-G-{args.checkpoint}.pt",
+        )
+
+    for epoch in range(args.checkpoint + 1, num_epochs):
 
         generator = generator.train()
         discriminator = discriminator.train()
@@ -213,14 +218,16 @@ def train(
             d_total_error.backward()
             D_solver.step()
 
-            G_solver.zero_grad()
-            g_fake_seed = sample_noise(batch_size, dim_z).to(device)
-            g_fake_seed = g_fake_seed.view(batch_size, dim_z, 1, 1)
-            gen_fake_images = generator(g_fake_seed)
-            gen_logits_fake = discriminator(gen_fake_images)
-            g_error = ls_generator_loss(gen_logits_fake)
-            g_error.backward()
-            G_solver.step()
+            # run generator for a few steps
+            for _ in range(3):
+                G_solver.zero_grad()
+                g_fake_seed = sample_noise(batch_size, dim_z).to(device)
+                g_fake_seed = g_fake_seed.view(batch_size, dim_z, 1, 1)
+                gen_fake_images = generator(g_fake_seed)
+                gen_logits_fake = discriminator(gen_fake_images)
+                g_error = ls_generator_loss(gen_logits_fake)
+                g_error.backward()
+                G_solver.step()
 
             if rank == 0 and i % 10 == 0:
                 p_print(
@@ -228,10 +235,16 @@ def train(
                         epoch, i, d_total_error.item(), g_error.item()
                     )
                 )
-                summary_writer.add_scalar("discriminator_loss", d_total_error.item(), epoch * len(train_loader) + i)
-                summary_writer.add_scalar("generator_loss", g_error.item(), epoch * len(train_loader) + i)
+                summary_writer.add_scalar(
+                    "discriminator_loss",
+                    d_total_error.item(),
+                    epoch * len(train_loader) + i,
+                )
+                summary_writer.add_scalar(
+                    "generator_loss", g_error.item(), epoch * len(train_loader) + i
+                )
 
-            if rank == 0 and i % 150 == 0:
+            if rank == 0 and i % 200 == 0:
                 # put generator in evaluation mode
                 generator = generator.eval()
                 with torch.no_grad():
@@ -240,7 +253,7 @@ def train(
                     output = generator(g_fake_seed)
                     vutils.save_image(
                         output.data,
-                        f"output/gan_2/fake_samples_epoch_{epoch}_{i}.png",
+                        f"{sample_image_output_dir}/{model_name}_epoch_{epoch}_{i}.png",
                         normalize=True,
                     )
 
@@ -249,9 +262,14 @@ def train(
 
         # save the model
         if rank == 0:
-            torch.save(generator.state_dict(), f"model/gan/bn_2_generator-{epoch}.pt")
-            torch.save(
-                discriminator.state_dict(), f"model/gan/bn_2_discriminator-{epoch}.pt"
+            save_model(
+                discriminator,
+                D_solver,
+                f"{model_checkpoint_dir}/{model_name}-D-{epoch}.pt",
+            )
+
+            save_model(
+                generator, G_solver, f"{model_checkpoint_dir}/{model_name}-G-{epoch}.pt"
             )
 
     if world_size > 1:
@@ -274,14 +292,20 @@ def cleanup():
 
 
 if __name__ == "__main__":
+    # Get args
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--load_checkpoint", action="store_true")
+    parser.add_argument("--checkpoint", type=int, default=-1)
+    args = parser.parse_args()
+
     # If CUDA is available, use it.
     world_size = torch.cuda.device_count()
     if world_size > 0:
         mp.spawn(
             train,
-            args=(world_size,),  # 10 epochs, for example
+            args=(world_size, args),  # 10 epochs, for example
             nprocs=world_size,
             join=True,
         )
     else:
-        train(0, 1)
+        train(0, 1, args)
