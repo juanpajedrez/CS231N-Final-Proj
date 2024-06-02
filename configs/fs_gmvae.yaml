@@ -17,5 +17,5 @@ model: # Any model parameters
   train: 1
   overwrite: 0
   loss: "mse" 
-  nn_type: "FSVAE_CXR14_V3"
+  nn_type: "FSVAE_CXR14_V1_Kuni"
   num_classes : 14

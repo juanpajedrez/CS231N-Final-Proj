@@ -72,6 +72,9 @@ class DfReader:
                 # get the relevant columns
                 df_read = df_read[self.get_columns()]
 
+                # temporary change to get only the no finding cases for training GAN
+                df_read = df_read[df_read["No Finding"] == 1]
+
                 # filter out by how much data is needed
                 df_read = self.filter_data(df_read)
 

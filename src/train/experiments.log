@@ -1,0 +1,11 @@
+Experiments
+Epoch 0 - 3: equal learning rates with gen running 3 times
+Epoch 3 - 7: gen running 1 time
+Epoch 7 - 8: 
+Epoch 7 - 8:
+Epoch 7 - 8: LR - 6e-4, gen running 1 time
+
+
+final-vae: lr=5e-4, beta=0.1
+final-vae-1: lr=5e-4, beta=1
+final-vae-2: lr=1e-4, beta=0.002
