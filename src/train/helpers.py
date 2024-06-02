@@ -309,6 +309,10 @@ def save_model(model, optimizer, filepath):
         "torch_rng": torch.random.get_rng_state(),
     }
 
+    # if the parent directory does not exist, create it
+    if not os.path.exists(os.path.dirname(filepath)):
+        os.makedirs(os.path.dirname(filepath))
+    
     torch.save(save_info, filepath)
     p_print(f"save the model to {filepath}")
 

@@ -7,6 +7,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.optim as optim
+import torchvision.utils as vutils
 from dotenv import load_dotenv
 from torch import nn
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -21,7 +22,8 @@ data_path = os.environ.get("DATA_PATH")
 # Feels hacky. Figure out a better way.
 sys.path.append(os.path.join(project_path, "src"))
 
-from train.helpers import get_data_loaders, get_dataframes, load_model, p_print, save_model
+from train.helpers import (get_data_loaders, get_dataframes, load_model,
+                           p_print, save_model)
 
 
 def get_encoder():
@@ -93,7 +95,7 @@ def get_decoder(dim_z):
 
 class VAE(nn.Module):
 
-    def __init__(self, dim_z=1000, dim_y=0, beta=0.1) -> None:
+    def __init__(self, dim_z=1000, dim_y=0, beta=1) -> None:
         super(VAE, self).__init__()
 
         self.encoder_module = get_encoder()
@@ -143,7 +145,10 @@ class VAE(nn.Module):
 
     def sample(self, num_samples=1):
         z = torch.randn(num_samples, self.dim_z)
-        s = self.decode(z)
+        self.decoder_module.eval()
+        with torch.no_grad():
+            s = self.decode(z)
+        self.decoder_module.train()
         return s.detach()
 
     def load_from_checkpoint(self, path):
@@ -215,7 +220,13 @@ def train(
         image_size=128,
     )
 
-    model_name = f"model/vae/final-vae"
+    model_name = f"final-vae-1"
+    sample_image_output_dir = "output/vae"
+    model_checkpoint_dir = "model/vae"
+    if not os.path.exists(sample_image_output_dir):
+        os.makedirs(sample_image_output_dir)
+    if not os.path.exists(model_checkpoint_dir):
+        os.makedirs(model_checkpoint_dir)
 
     model = VAE().to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -224,7 +235,7 @@ def train(
         model = DDP(model, device_ids=[rank])
     
     if args.load_checkpoint:
-        load_model(model, optimizer, f"model/vae/final-vae-{args.checkpoint}.pt")
+        load_model(model, optimizer, f"{model_checkpoint_dir}/{model_name}-{args.checkpoint}.pt")
 
     model_module = get_model(model)
 
@@ -248,12 +259,21 @@ def train(
                     "loss", loss.item(), epoch * len(train_loader) + i
                 )
 
+            if i % 50 == 0:
+                # sample an image and save it
+                s = model_module.sample(1)
+                s = s.view(-1, 1, 128, 128)
+                vutils.save_image(
+                    s.data,
+                    f"{sample_image_output_dir}/{model_name}_epoch_{epoch}_{i}.png",
+                    normalize=True,
+                )
+
         if rank == 0:
             val_loss = evaluate(model, val_loader)
-            save_model(model, optimizer, f"{model_name}-{epoch}.pt")
+            save_model(model, optimizer, f"{model_checkpoint_dir}/{model_name}-{epoch}.pt")
             p_print(f"Epoch: {epoch}, Val_Loss: {val_loss}")
             summary_writer.add_scalar("loss", loss.item(), epoch)
-
 
 def setup(rank, world_size):
     os.environ["MASTER_ADDR"] = "localhost"
