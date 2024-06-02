@@ -4,8 +4,9 @@ import random
 
 import numpy as np
 import torch
+from PIL import Image, ImageOps
 from sklearn.metrics import roc_auc_score
-from torch.utils.data import DataLoader, RandomSampler, DistributedSampler
+from torch.utils.data import DataLoader, DistributedSampler, RandomSampler
 from torchvision import models, transforms
 
 from train.constants import Architectures, Optimisers
@@ -35,16 +36,15 @@ def get_data_loaders(
     rank=0,
     world_size=1,
     use_multi_gpu=False,
-    image_size=224
+    image_size=224,
 ):
-    
+
     datasets = [
-        ('train', 'train.csv', True),
-        ('test', 'test.csv', False),
-        ('val', 'val.csv', False)
+        ("train", "train.csv", True),
+        ("test", "test.csv", False),
+        ("val", "val.csv", False),
     ]
-    
-    
+
     # Create datasets and dataloaders
     train_dataset = CXReader(
         data_path=data_path,
@@ -128,8 +128,21 @@ def create_data_loader(
         )
 
 
+class HistogramEqualization:
+    def __call__(self, img):
+        if img.mode == "RGB":
+            r, g, b = img.split()
+            h = ImageOps.equalize(r)
+            e = ImageOps.equalize(g)
+            i = ImageOps.equalize(b)
+            img = Image.merge("RGB", (h, e, i))
+        else:
+            img = ImageOps.equalize(img)
+        return img
+
+
 def get_transforms(augmentaiton=False, image_size=224):
-    normalize = transforms.Normalize((0.5,), (0.5,)) # normalise between [-1, 1]
+    normalize = transforms.Normalize((0.5,), (0.5,))  # normalise between [-1, 1]
     if augmentaiton:
         transform = transforms.Compose(
             [
@@ -147,7 +160,13 @@ def get_transforms(augmentaiton=False, image_size=224):
         )
     else:
         transform = transforms.Compose(
-            [transforms.Resize(image_size), transforms.CenterCrop(image_size), transforms.Grayscale(num_output_channels=1), transforms.ToTensor(), normalize]
+            [
+                transforms.Resize(image_size),
+                transforms.CenterCrop(image_size),
+                transforms.Grayscale(num_output_channels=1),
+                HistogramEqualization(),
+                transforms.ToTensor(),
+            ]
         )
     return transform
 
@@ -279,3 +298,31 @@ def p_print(*args):
             file=f,
             flush=True,
         )
+
+
+def save_model(model, optimizer, filepath):
+    save_info = {
+        "model": model.state_dict(),
+        "optim": optimizer.state_dict(),
+        "system_rng": random.getstate(),
+        "numpy_rng": np.random.get_state(),
+        "torch_rng": torch.random.get_rng_state(),
+    }
+
+    # if the parent directory does not exist, create it
+    if not os.path.exists(os.path.dirname(filepath)):
+        os.makedirs(os.path.dirname(filepath))
+    
+    torch.save(save_info, filepath)
+    p_print(f"save the model to {filepath}")
+
+def load_model(model, optimizer, filepath):
+    checkpoint = torch.load(filepath)
+    model.load_state_dict(checkpoint["model"])
+    optimizer.load_state_dict(checkpoint["optim"])
+    random.setstate(checkpoint["system_rng"])
+    np.random.set_state(checkpoint["numpy_rng"])
+    torch.random.set_rng_state(checkpoint["torch_rng"])
+    p_print(f"loaded the model from {filepath}")
+    return model, optimizer
+    

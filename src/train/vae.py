@@ -1,3 +1,4 @@
+import argparse
 import datetime
 import os
 import sys
@@ -6,9 +7,14 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.optim as optim
+import torchvision.utils as vutils
+from dotenv import load_dotenv
 from torch import nn
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import models
+
+load_dotenv()
 
 project_path = os.environ.get("PROJECT_PATH")
 data_path = os.environ.get("DATA_PATH")
@@ -16,101 +22,106 @@ data_path = os.environ.get("DATA_PATH")
 # Feels hacky. Figure out a better way.
 sys.path.append(os.path.join(project_path, "src"))
 
-from train.constants import Architectures
-from train.helpers import get_data_loaders, get_dataframes, p_print
+from train.helpers import (
+    get_data_loaders,
+    get_dataframes,
+    load_model,
+    p_print,
+    save_model,
+)
 
 
-def get_encoder(architecture):
-    if architecture == Architectures.VGG:
-        model = models.vgg16(weights="DEFAULT")
-        features_module = model.features
+def get_encoder():
+    # num_params: 13,93,120
+    encoder = nn.Sequential(
+        # 1 x 128 x 128 -> 32 x 64 x 64
+        nn.Conv2d(1, 32, 3, 1, 1),
+        nn.LeakyReLU(0.2, inplace=True),
+        nn.Conv2d(32, 32, 3, 1, 1),
+        nn.LeakyReLU(0.2, inplace=True),
+        nn.MaxPool2d(2, 2, 0),
+        # 32 x 64 x 64 -> 64 x 32 x 32
+        nn.Conv2d(32, 64, 3, 1, 1),
+        nn.LeakyReLU(0.2, inplace=True),
+        nn.Conv2d(64, 64, 3, 1, 1),
+        nn.LeakyReLU(0.2, inplace=True),
+        nn.MaxPool2d(2, 2, 0),
+        # 64 x 32 x 32 -> 128 x 16 x 16
+        nn.Conv2d(64, 128, 3, 1, 1),
+        nn.LeakyReLU(0.2, inplace=True),
+        nn.Conv2d(128, 128, 3, 1, 1),
+        nn.LeakyReLU(0.2, inplace=True),
+        nn.MaxPool2d(2, 2, 0),
+        # 128 * 16 * 16 -> 256 x 8 x 8
+        nn.Conv2d(128, 256, 3, 1, 1),
+        nn.LeakyReLU(0.2, inplace=True),
+        nn.Conv2d(256, 256, 3, 1, 1),
+        nn.LeakyReLU(0.2, inplace=True),
+        nn.MaxPool2d(2, 2, 0),
+        # 256 x 8 x 8 -> 512 x 4 x 4
+        nn.Conv2d(256, 512, 3, 1, 1),
+        nn.LeakyReLU(0.2, inplace=True),
+        nn.Conv2d(512, 512, 3, 1, 1),
+        nn.LeakyReLU(0.2, inplace=True),
+        nn.MaxPool2d(2, 2, 0),
+        # 512 x 4 x 4 -> 8192
+        nn.Flatten(),
+    )
+    return encoder
 
-    for param in features_module.parameters():
-        param.requires_grad = False
 
-    # ToDo: Also add transition layer here and standardise the
-    # Z space
-    return features_module
-
-
-class Reshape(nn.Module):
-    def __init__(self, new_shape):
-        super(Reshape, self).__init__()
-        self.new_shape = new_shape  # Define the target shape excluding the batch size
-
-    def forward(self, x):
-        return x.view(x.size(0), *self.new_shape)  # x.size(0) is the batch size
-
-
-def get_decoder(architecture, dim_z):
-    if architecture == Architectures.VGG:
-        # incoming image is of 14 * 14 * 14
-        decoder = nn.Sequential(
-            nn.Linear(dim_z, 128 * 14 * 14),
-            Reshape((128, 14, 14)),
-            # 14 * 14 -> 28 * 28
-            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            # 28 * 28 -> 56 * 56
-            nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(inplace=True),
-            # 56 * 56 -> 112 * 112
-            nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm2d(16),
-            nn.ReLU(inplace=True),
-            # 112 * 112 -> 224 * 224
-            nn.ConvTranspose2d(16, 3, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm2d(3),
-            nn.ReLU(inplace=True),
-        )
+def get_decoder(dim_z):
+    # num_params: 10,987,457
+    # incoming image is of 14 * 14 * 14
+    decoder = nn.Sequential(
+        nn.Linear(dim_z, 512 * 4 * 4),
+        nn.Unflatten(1, (512, 4, 4)),
+        # 512 * 4 * 4 -> 256 * 8 * 8
+        nn.ConvTranspose2d(512, 256, kernel_size=4, stride=2, padding=1),
+        nn.BatchNorm2d(256),
+        nn.ReLU(inplace=True),
+        # 256 * 8 * 8 -> 128 * 16 * 16
+        nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),
+        nn.BatchNorm2d(128),
+        nn.ReLU(inplace=True),
+        # 128 * 16 * 16 -> 64 * 32 * 32
+        nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),
+        nn.BatchNorm2d(64),
+        nn.ReLU(inplace=True),
+        # 64 * 32 * 32 -> 32 * 64 * 64
+        nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1),
+        nn.BatchNorm2d(32),
+        nn.ReLU(inplace=True),
+        # 32 * 64 * 64 -> 1 * 128 * 128
+        nn.ConvTranspose2d(32, 1, kernel_size=4, stride=2, padding=1),
+    )
     return decoder
 
 
 class VAE(nn.Module):
 
-    def __init__(
-        self, architecture=Architectures.VGG, dim_z=1000, dim_y=0, beta=0.1
-    ) -> None:
+    def __init__(self, dim_z=1024, dim_y=0, beta=2e-3) -> None:
         super(VAE, self).__init__()
 
-        self.encoder_module = get_encoder(architecture)
+        self.encoder_module = get_encoder()
         self.dim_z = dim_z
 
-        ## Encoder
-        # VGG16 gives 512x7x7 (25088) feature map in the end. Lets treat it as a feature
-        # and learn mu and logvar from it
-        # f_theta_z
-        # features_out_dim = 512 * 7 * 7
+        features_out_dim = 8192
 
-        # lets downsample it to dim_z
-        self.downsample = nn.Sequential(
-            nn.Conv2d(512, 256, kernel_size=1),  # 512x7x7 -> 256x7x7
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, 128, kernel_size=1),  # 256x7x7 -> 128x7x7
-            nn.ReLU(inplace=True),
-            nn.BatchNorm2d(128),
+        self.mu = nn.Sequential(
+            nn.Linear(features_out_dim, dim_z), nn.LeakyReLU(0.2, inplace=True)
+        )
+        self.logvar = nn.Sequential(
+            nn.Linear(features_out_dim, dim_z), nn.LeakyReLU(0.2, inplace=True)
         )
 
-        features_out_dim = 128 * 7 * 7
-
-        self.mu = nn.Sequential(nn.Linear(features_out_dim, dim_z), nn.ReLU())
-        self.logvar = nn.Sequential(nn.Linear(features_out_dim, dim_z), nn.ReLU())
-
-        self.decoder_module = get_decoder(architecture, self.dim_z)
+        self.decoder_module = get_decoder(self.dim_z)
 
         self.beta = beta
 
     def encode(self, x):
-        # x should be of shape (batch_size, 128, 7, 7)
+        # x should be of shape (batch_size, 1, 128, 128)
         x = self.encoder_module(x)
-
-        x = self.downsample(x)
-
-        # Flatten it
-        x = x.view(x.size(0), -1)
-
         mu = self.mu(x)
         logvar = self.logvar(x)
         return mu, logvar
@@ -122,8 +133,6 @@ class VAE(nn.Module):
         return z
 
     def decode(self, z, y=None):
-        # reshape the incoming z into 14 * 14 * 14
-        z = z.view(-1, self.dim_z)
         return self.decoder_module(z)
 
     def forward(self, x):
@@ -139,9 +148,12 @@ class VAE(nn.Module):
         kl_divergence = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         return reconstruction_loss + self.beta * kl_divergence
 
-    def sample(self, num_samples=1):
-        z = torch.randn(num_samples, self.dim_z)
-        s = self.decode(z)
+    def sample(self, device, num_samples=1):
+        z = torch.randn(num_samples, self.dim_z).to(device)
+        self.decoder_module.eval()
+        with torch.no_grad():
+            s = self.decode(z)
+        self.decoder_module.train()
         return s.detach()
 
     def load_from_checkpoint(self, path):
@@ -152,7 +164,6 @@ def evaluate(model, data_loader):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     batches_to_eval = min(20, len(data_loader))
-
     cycle_loader = iter(data_loader)
 
     loss = 0
@@ -178,12 +189,22 @@ def get_model(model):
 def train(
     rank,
     world_size,
+    args,
     learning_rate=1e-4,
     data_size="all",
     data_augmentation=False,
     batch_size=64,
 ):
-    # summary_writer = SummaryWriter(f"runs/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-toy-vae-10-epochs")
+    model_name = "vae-beta_2e-3"
+    sample_image_output_dir = "output/vae"
+    model_checkpoint_dir = "model/vae"
+    if not os.path.exists(sample_image_output_dir):
+        os.makedirs(sample_image_output_dir)
+    if not os.path.exists(model_checkpoint_dir):
+        os.makedirs(model_checkpoint_dir)
+
+    if rank == 0:
+        summary_writer = SummaryWriter(f"runs/{model_name}-10-epochs")
 
     if world_size > 1:
         setup(rank, world_size)
@@ -196,7 +217,7 @@ def train(
     print("Using device", device)
 
     dfs_holder, dfs_names = get_dataframes(
-        os.path.join(project_path, "meta"), diseases="all", data=data_size
+        os.path.join(project_path, "meta"), diseases=["No Finding"], data=data_size
     )
 
     train_loader, test_loader, val_loader = get_data_loaders(
@@ -204,53 +225,69 @@ def train(
         dfs_names,
         data_path,
         batch_size=batch_size,
-        num_workers=2,
+        num_workers=4,
         data_augmentation=data_augmentation,
         rank=rank,
         world_size=world_size,
         use_multi_gpu=use_multi_gpu,
+        image_size=128,
     )
 
-    model = VAE(Architectures.VGG).to(device)
-
-    # model = get_model(model)
-
-    # Define the optimizer
+    model = VAE().to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-    model_name = f"models/vae/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-toy-vae-20-epochs"
+    if world_size > 1:
+        model = DDP(model, device_ids=[rank])
 
-    # cycle_loader = iter(train_loader)
+    if args.load_checkpoint:
+        load_model(
+            model,
+            optimizer,
+            f"{model_checkpoint_dir}/{model_name}-{args.checkpoint}.pt",
+        )
+
+    model_module = get_model(model)
 
     # Training loop
-    num_epochs = 20
-    best_val_loss = 1e5
-    # batch_per_epoch = 100
+    num_epochs = 10
 
-    for epoch in range(num_epochs):
+    for epoch in range(args.checkpoint + 1, num_epochs):
         model.train()
         for i, (images, _) in enumerate(train_loader):
             images = images.to(device)
 
             optimizer.zero_grad()
             x_hat, mu, logvar = model(images)
-            loss = model.loss(images, x_hat, mu, logvar)
+            loss = model_module.loss(images, x_hat, mu, logvar)
             loss.backward()
             optimizer.step()
 
             if rank == 0 and i % 10 == 0:
                 p_print("Epoch: ", epoch, "Iteration: ", i, "Loss: ", loss.item())
-                # summary_writer.add_scalar("loss", loss.item(), epoch * len(train_loader) + i)
+                summary_writer.add_scalar(
+                    "loss", loss.item(), epoch * len(train_loader) + i
+                )
+
+            if rank == 0 and i % 50 == 0:
+                # sample an image and save it
+                s = model_module.sample(device, 1)
+                s = s.view(-1, 1, 128, 128)
+                vutils.save_image(
+                    s.data,
+                    f"{sample_image_output_dir}/{model_name}_epoch_{epoch}_{i}.png",
+                    normalize=True,
+                )
 
         if rank == 0:
             val_loss = evaluate(model, val_loader)
-
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                torch.save(model.state_dict(), model_name)
-                print("saved model")
-
+            save_model(
+                model, optimizer, f"{model_checkpoint_dir}/{model_name}-{epoch}.pt"
+            )
             p_print(f"Epoch: {epoch}, Val_Loss: {val_loss}")
+            summary_writer.add_scalar("val loss", loss.item(), epoch)
+
+    if world_size > 1:
+        cleanup()
 
 
 def setup(rank, world_size):
@@ -269,14 +306,20 @@ def cleanup():
 
 
 if __name__ == "__main__":
+    # Get args
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--load_checkpoint", action="store_true")
+    parser.add_argument("--checkpoint", type=int, default=0)
+    args = parser.parse_args()
+
     # If CUDA is available, use it.
     world_size = torch.cuda.device_count()
     if world_size > 0:
         mp.spawn(
             train,
-            args=(world_size,),  # 10 epochs, for example
+            args=(world_size, args),  # 10 epochs, for example
             nprocs=world_size,
             join=True,
         )
     else:
-        train(0)
+        train(0, 1, args)
